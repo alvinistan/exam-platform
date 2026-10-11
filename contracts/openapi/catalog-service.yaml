@@ -68,7 +68,9 @@ paths:
       tags: [Catalogue]
       operationId: getExamBySlug
       summary: Resolve an exam URL
-      description: Returns a published exam's public detail. A retired slug returns 301 to the current one. Draft or archived exams return 404 with code NOT_FOUND or EXAM_UNAVAILABLE.
+      description: >-
+        Returns a published exam's public detail. A retired slug returns 301 to the current one. An unknown slug
+        returns 404 NOT_FOUND; a draft or archived exam returns 404 EXAM_UNAVAILABLE (FR-CAT-10).
       security: [{}, { bearerAuth: [] }]
       parameters:
         - { name: slug, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' } }
@@ -88,6 +90,14 @@ paths:
           $ref: './common.yaml#/components/responses/NotFound'
 
   /api/admin/catalog/categories:
+    get:
+      tags: [Admin exams]
+      operationId: adminListCategories
+      summary: List all categories, archived included
+      responses:
+        '200': { description: Categories., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminCategory' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
     post:
       tags: [Admin exams]
       operationId: createCategory
@@ -98,11 +108,57 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CategoryInput' }
       responses:
-        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } } }
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/AdminCategory' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '409': { description: Slug taken (code SLUG_TAKEN)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/catalog/categories/{categoryId}:
+    put:
+      tags: [Admin exams]
+      operationId: updateCategory
+      summary: Update a category
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminCategory' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
         '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/categories/{categoryId}/archive:
+    post:
+      tags: [Admin exams]
+      operationId: archiveCategory
+      summary: Archive a category
+      description: Refused (CONFLICT) while the category has published exams.
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '200': { description: Archived., content: { application/json: { schema: { $ref: '#/components/schemas/AdminCategory' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/categories/{categoryId}/restore:
+    post:
+      tags: [Admin exams]
+      operationId: restoreCategory
+      summary: Make an archived category active again
+      parameters:
+        - $ref: '#/components/parameters/CategoryId'
+      responses:
+        '200': { description: Active., content: { application/json: { schema: { $ref: '#/components/schemas/AdminCategory' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
   /api/admin/catalog/exams:
     get:
       tags: [Admin exams]
@@ -137,7 +193,7 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/ExamInput' }
       responses:
-        '201': { description: Created as DRAFT., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExam' } } } }
+        '201': { description: Created as DRAFT., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExamDetail' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
@@ -145,54 +201,86 @@ paths:
   /api/admin/catalog/exams/{examId}:
     parameters:
       - $ref: '#/components/parameters/ExamId'
-    patch:
+    get:
+      tags: [Admin exams]
+      operationId: adminGetExam
+      summary: Get an exam with its settings and publish readiness
+      responses:
+        '200':
+          description: Exam. The ETag header carries the version for If-Match.
+          content: { application/json: { schema: { $ref: '#/components/schemas/AdminExamDetail' } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+    put:
       tags: [Admin exams]
       operationId: updateExam
-      summary: Update exam details
+      summary: Replace exam details and subject links
+      description: >-
+        Send every field. Changing the slug keeps the old one redirecting (FR-CAT-06). On a published exam the change
+        is refused with PUBLISH_BLOCKED if the exam would no longer meet FR-CAT-05. Emits ExamUpdated when published.
       parameters:
-        - { name: If-Match, in: header, required: true, description: Version for optimistic locking., schema: { type: string } }
+        - $ref: '#/components/parameters/IfMatch'
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ExamInput' }
       responses:
-        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExam' } } } }
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExamDetail' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
-        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+        '409': { description: 'Stale version (CONFLICT), slug taken (SLUG_TAKEN) or published exam would break (PUBLISH_BLOCKED).', content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
   /api/admin/catalog/exams/{examId}/publish:
     post:
       tags: [Admin exams]
       operationId: publishExam
       summary: Publish an exam
-      description: Refused with PUBLISH_BLOCKED and a list of reasons until FR-CAT-05 holds. Emits ExamPublished.
+      description: >-
+        Refused with PUBLISH_BLOCKED and a `blockers` list until FR-CAT-05 holds. Assigns the next catalogue position
+        when none is set. Emits ExamPublished.
       parameters:
         - $ref: '#/components/parameters/ExamId'
       responses:
-        '200': { description: Published., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExam' } } } }
+        '200': { description: Published., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExamDetail' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
-        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: Not ready (PUBLISH_BLOCKED with blockers) or already published (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
   /api/admin/catalog/exams/{examId}/archive:
     post:
       tags: [Admin exams]
       operationId: archiveExam
       summary: Archive an exam
+      description: Removes it from the catalogue; its URL shows "unavailable". Emits ExamArchived.
       parameters:
         - $ref: '#/components/parameters/ExamId'
       responses:
-        '200': { description: Archived; attempts remain viewable., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExam' } } } }
+        '200': { description: Archived; attempts remain viewable., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExamDetail' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
         '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/exams/{examId}/modes:
+    get:
+      tags: [Admin exams]
+      operationId: listModes
+      summary: All three modes' settings (unsaved modes show suggested defaults, disabled)
+      parameters:
+        - $ref: '#/components/parameters/ExamId'
+      responses:
+        '200': { description: 'Modes in the order PRACTICE, MOCK, USER_FRIENDLY.', content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ModeConfig' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
   /api/admin/catalog/exams/{examId}/modes/{mode}:
     put:
       tags: [Admin exams]
       operationId: configureMode
       summary: Configure one exam mode
+      description: A mock exam needs a time limit and AFTER_SUBMIT feedback. Refused with PUBLISH_BLOCKED if a published exam would break.
       parameters:
         - $ref: '#/components/parameters/ExamId'
         - { name: mode, in: path, required: true, schema: { $ref: './common.yaml#/components/schemas/Mode' } }
@@ -200,18 +288,109 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/ModeConfig' }
+            schema: { $ref: '#/components/schemas/ModeInput' }
       responses:
         '200': { description: Saved., content: { application/json: { schema: { $ref: '#/components/schemas/ModeConfig' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/subjects:
+    get:
+      tags: [Admin exams]
+      operationId: contentLibrary
+      summary: The whole content library (subjects → modules → topics), archived items included
+      responses:
+        '200': { description: Subjects by title., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/SubjectAdmin' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+    post:
+      tags: [Admin exams]
+      operationId: createSubject
+      summary: Create a subject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubjectInput' }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/SubjectAdmin' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/catalog/subjects/{subjectId}:
+    put:
+      tags: [Admin exams]
+      operationId: updateSubject
+      summary: Update or archive a subject
+      parameters:
+        - { name: subjectId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubjectInput' }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/SubjectAdmin' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/modules:
+    post:
+      tags: [Admin exams]
+      operationId: createModule
+      summary: Add a module to a subject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectId, title]
+              properties:
+                subjectId: { type: string, format: uuid }
+                title: { type: string, minLength: 2, maxLength: 160 }
+                displayOrder: { type: integer, minimum: 0 }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/ModuleAdmin' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/catalog/modules/{moduleId}:
+    put:
+      tags: [Admin exams]
+      operationId: updateModule
+      summary: Update or archive a module
+      parameters:
+        - { name: moduleId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, minLength: 2, maxLength: 160 }
+                displayOrder: { type: integer, minimum: 0 }
+                status: { type: string, enum: [ACTIVE, ARCHIVED] }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/ModuleAdmin' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
   /api/admin/catalog/topics:
     post:
       tags: [Admin exams]
       operationId: createTopic
       summary: Add a topic to a module
-      description: Subjects and modules have matching create/update endpoints (/subjects, /modules) with the same shape.
       requestBody:
         required: true
         content:
@@ -222,13 +401,41 @@ paths:
               properties:
                 moduleId: { type: string, format: uuid }
                 title: { type: string, minLength: 2, maxLength: 160 }
-                displayOrder: { type: integer }
-                prerequisiteTopicIds: { type: array, items: { type: string, format: uuid } }
+                displayOrder: { type: integer, minimum: 0 }
+                prerequisiteTopicIds: { type: array, maxItems: 20, items: { type: string, format: uuid } }
       responses:
-        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/TopicNode' } } } }
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/TopicAdmin' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/catalog/topics/{topicId}:
+    put:
+      tags: [Admin exams]
+      operationId: updateTopic
+      summary: Update, archive or set prerequisites of a topic
+      description: Prerequisites must not form a loop (FR-CAT-13). Omit prerequisiteTopicIds to keep them unchanged.
+      parameters:
+        - { name: topicId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, minLength: 2, maxLength: 160 }
+                displayOrder: { type: integer, minimum: 0 }
+                status: { type: string, enum: [ACTIVE, ARCHIVED] }
+                prerequisiteTopicIds: { type: array, maxItems: 20, items: { type: string, format: uuid } }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/TopicAdmin' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
 
   /api/admin/catalog/questions:
     get:
@@ -468,6 +675,17 @@ components:
       in: path
       required: true
       schema: { type: string, format: uuid }
+    CategoryId:
+      name: categoryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: The record version from the ETag header (optimistic locking).
+      schema: { type: string }
   schemas:
     Category:
       type: object
@@ -478,14 +696,28 @@ components:
         slug: { type: string }
         description: { type: [string, 'null'] }
         displayOrder: { type: integer }
+        examCount: { type: integer, description: Published exams in the category. }
+    AdminCategory:
+      type: object
+      required: [id, name, slug, status, version, examCount, publishedExamCount]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: [string, 'null'] }
+        displayOrder: { type: integer }
+        status: { type: string, enum: [ACTIVE, ARCHIVED] }
+        version: { type: integer }
+        examCount: { type: integer, description: Draft and published exams. }
+        publishedExamCount: { type: integer }
     CategoryInput:
       type: object
       required: [name, slug]
       properties:
         name: { type: string, minLength: 2, maxLength: 80 }
-        slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 80 }
         description: { type: string, maxLength: 500 }
-        displayOrder: { type: integer }
+        displayOrder: { type: integer, minimum: 0 }
     ExamSummary:
       type: object
       required: [id, title, slug, categoryId, modes]
@@ -503,8 +735,15 @@ components:
       allOf:
         - $ref: '#/components/schemas/ExamSummary'
         - type: object
-          required: [instructions, subjects, modeSettings]
+          required: [category, instructions, seo, subjects, modeSettings]
           properties:
+            category:
+              type: object
+              required: [id, name, slug]
+              properties:
+                id: { type: string, format: uuid }
+                name: { type: string }
+                slug: { type: string }
             instructions: { type: string }
             seo:
               type: object
@@ -514,8 +753,8 @@ components:
             subjects: { type: array, items: { $ref: '#/components/schemas/SubjectNode' } }
             modeSettings:
               type: array
-              description: Public subset only (counts, duration, feedback timing); never answer keys.
-              items: { $ref: '#/components/schemas/ModeConfig' }
+              description: Enabled modes only, public subset (counts, duration, feedback timing, marking).
+              items: { $ref: '#/components/schemas/PublicModeConfig' }
     SubjectNode:
       type: object
       required: [id, title, modules]
@@ -548,31 +787,134 @@ components:
         categoryId: { type: string, format: uuid }
         shortDescription: { type: string, maxLength: 300 }
         instructions: { type: string, maxLength: 5000 }
-        coverMediaKey: { type: string }
         seoTitle: { type: string, maxLength: 70 }
         seoDescription: { type: string, maxLength: 160 }
-        displayOrder: { type: integer, minimum: 1 }
+        displayOrder:
+          type: [integer, 'null']
+          minimum: 1
+          description: Catalogue position (free-access order). Unique among published exams; assigned on publish when empty.
         featured: { type: boolean }
-        subjectIds: { type: array, items: { type: string, format: uuid } }
+        subjectIds: { type: array, maxItems: 50, items: { type: string, format: uuid } }
     AdminExam:
       allOf:
         - $ref: '#/components/schemas/ExamSummary'
         - type: object
-          required: [status, version, publishReadiness]
+          required: [status, version, publishedQuestionCount, trialQuestionCount, topicCount, publishReadiness]
           properties:
             status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
             publishedAt: { type: [string, 'null'], format: date-time }
+            updatedAt: { type: string, format: date-time }
             version: { type: integer }
-            publishedQuestionCount: { type: integer }
+            publishedQuestionCount: { type: integer, description: Published Main-bank questions in the exam's active topics. }
+            trialQuestionCount: { type: integer, description: Published Trial-bank questions (information only). }
+            topicCount: { type: integer, description: Active topics reachable through linked subjects. }
             publishReadiness:
               type: object
               required: [ready, blockers]
               properties:
                 ready: { type: boolean }
                 blockers: { type: array, items: { type: string }, examples: [['MOCK needs 40 published questions; 12 published']] }
+    AdminExamDetail:
+      allOf:
+        - $ref: '#/components/schemas/AdminExam'
+        - type: object
+          required: [instructions, subjectIds, modeSettings]
+          properties:
+            instructions: { type: string }
+            seoTitle: { type: [string, 'null'] }
+            seoDescription: { type: [string, 'null'] }
+            subjectIds: { type: array, items: { type: string, format: uuid } }
+            modeSettings: { type: array, items: { $ref: '#/components/schemas/ModeConfig' } }
+    SubjectInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 2, maxLength: 160 }
+        code: { type: string, maxLength: 40, pattern: '^$|^[A-Z0-9][A-Z0-9_-]*$' }
+        description: { type: string, maxLength: 500 }
+        status: { type: string, enum: [ACTIVE, ARCHIVED], description: Updates only; omit to keep. }
+    TopicAdmin:
+      type: object
+      required: [id, moduleId, title, status, version, prerequisiteTopicIds, publishedQuestionCount, trialQuestionCount]
+      properties:
+        id: { type: string, format: uuid }
+        moduleId: { type: string, format: uuid }
+        title: { type: string }
+        displayOrder: { type: integer }
+        status: { type: string, enum: [ACTIVE, ARCHIVED] }
+        version: { type: integer }
+        prerequisiteTopicIds: { type: array, items: { type: string, format: uuid } }
+        publishedQuestionCount: { type: integer }
+        trialQuestionCount: { type: integer }
+    ModuleAdmin:
+      type: object
+      required: [id, subjectId, title, status, version, topics]
+      properties:
+        id: { type: string, format: uuid }
+        subjectId: { type: string, format: uuid }
+        title: { type: string }
+        displayOrder: { type: integer }
+        status: { type: string, enum: [ACTIVE, ARCHIVED] }
+        version: { type: integer }
+        topics: { type: array, items: { $ref: '#/components/schemas/TopicAdmin' } }
+    SubjectAdmin:
+      type: object
+      required: [id, title, status, version, linkedExamCount, modules]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        code: { type: [string, 'null'] }
+        description: { type: [string, 'null'] }
+        status: { type: string, enum: [ACTIVE, ARCHIVED] }
+        version: { type: integer }
+        linkedExamCount: { type: integer, description: Draft and published exams using the subject. }
+        modules: { type: array, items: { $ref: '#/components/schemas/ModuleAdmin' } }
+    PublicModeConfig:
+      type: object
+      required: [mode, enabled, defaultCount, minCount, maxCount, feedbackTiming, negativeMark, allowTopicChoice]
+      properties:
+        mode: { $ref: './common.yaml#/components/schemas/Mode' }
+        enabled: { type: boolean }
+        defaultCount: { type: integer }
+        minCount: { type: integer }
+        maxCount: { type: integer }
+        timeLimitSeconds: { type: [integer, 'null'] }
+        perQuestionSeconds: { type: [integer, 'null'] }
+        feedbackTiming: { type: string, enum: [IMMEDIATE, AFTER_SUBMIT] }
+        negativeMark: { type: number }
+        passMarkPct: { type: [integer, 'null'] }
+        allowTopicChoice: { type: boolean }
+        maxRetakes: { type: [integer, 'null'] }
+    ModeInput:
+      type: object
+      required: [enabled, defaultCount, minCount, maxCount, difficultyMix, shuffleQuestions, shuffleOptions, feedbackTiming, resultVisibility, negativeMark, allowTopicChoice]
+      properties:
+        enabled: { type: boolean }
+        defaultCount: { type: integer, minimum: 1, maximum: 500 }
+        minCount: { type: integer, minimum: 1, maximum: 500 }
+        maxCount: { type: integer, minimum: 1, maximum: 500 }
+        timeLimitSeconds: { type: [integer, 'null'], minimum: 60, maximum: 43200, description: Required for MOCK. }
+        perQuestionSeconds: { type: [integer, 'null'], minimum: 10, maximum: 3600 }
+        difficultyMix:
+          type: object
+          required: [simple, medium, hard]
+          description: Percentages adding up to 100.
+          properties:
+            simple: { type: integer, minimum: 0, maximum: 100 }
+            medium: { type: integer, minimum: 0, maximum: 100 }
+            hard: { type: integer, minimum: 0, maximum: 100 }
+        shuffleQuestions: { type: boolean }
+        shuffleOptions: { type: boolean }
+        feedbackTiming: { type: string, enum: [IMMEDIATE, AFTER_SUBMIT], description: MOCK must use AFTER_SUBMIT. }
+        resultVisibility: { type: string, enum: [SCORE_ONLY, SCORE_AND_ANSWERS, FULL] }
+        negativeMark: { type: number, minimum: 0, maximum: 1 }
+        passMarkPct: { type: [integer, 'null'], minimum: 1, maximum: 100 }
+        allowTopicChoice: { type: boolean }
+        adaptiveEnabled: { type: boolean, description: Stored for the adaptive engine (later phase); not shown in admin screens yet. }
+        maxRetakes: { type: [integer, 'null'], minimum: 0 }
     ModeConfig:
       type: object
-      required: [mode, enabled]
+      required: [mode, enabled, version, saved]
       properties:
         mode: { $ref: './common.yaml#/components/schemas/Mode' }
         enabled: { type: boolean }
@@ -596,6 +938,8 @@ components:
         allowTopicChoice: { type: boolean }
         adaptiveEnabled: { type: boolean }
         maxRetakes: { type: [integer, 'null'] }
+        version: { type: integer }
+        saved: { type: boolean, description: False while the mode has never been saved (values are suggested defaults). }
     OptionInput:
       type: object
       required: [label, bodyHtml, isCorrect]
