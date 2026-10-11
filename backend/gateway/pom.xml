@@ -27,6 +27,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Upstream HTTP client. Spring picks Apache HttpClient 5 when present: pooled connections, and it avoids a
+             race in the JDK HttpClient's streamed request bodies that made proxied requests fail intermittently. -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
