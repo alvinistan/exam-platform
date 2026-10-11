@@ -138,6 +138,12 @@ class PlatformSecurityTest {
         ApiAuthorizationRules publicCatalogue() {
             return rules -> rules.requestMatchers("/api/public/**").permitAll();
         }
+
+        /** Registered explicitly: Spring Boot's test filter skips classes nested in test classes during scanning. */
+        @Bean
+        SampleController sampleController() {
+            return new SampleController();
+        }
     }
 
     @RestController
