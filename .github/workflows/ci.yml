@@ -162,9 +162,13 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: leenex/${{ matrix.image }}:ci
-          severity: CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
+          severity: HIGH,CRITICAL
+          format: json
+          output: trivy-${{ matrix.image }}.json
+          exit-code: '0'
+      # Fails only on CRITICAL findings that have a fix; every HIGH/CRITICAL finding is listed on the pull request.
+      - name: Check scan results
+        run: python3 .github/scripts/trivy_report.py trivy-${{ matrix.image }}.json ${{ matrix.image }}
       - name: Check the container runs as a non-root user
         run: |
           user=$(docker image inspect --format '{{.Config.User}}' leenex/${{ matrix.image }}:ci)
