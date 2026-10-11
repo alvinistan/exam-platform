@@ -72,8 +72,26 @@ interface Props {
   onSaved: () => void;
 }
 
-/** Exam details and the subjects it draws on. Every field here has a server implementation (FR-CAT-12). */
-export function ExamDetailsForm({ exam, onCreated, onSaved }: Props) {
+/**
+ * Exam details and the subjects it draws on. Every field here has a server implementation (FR-CAT-12).
+ * The form waits for the category list: a native select can only show a value whose option already exists.
+ */
+export function ExamDetailsForm(props: Props) {
+  const categories = useAdminCategories();
+  if (categories.isPending) {
+    return (
+      <div aria-busy="true" className="flex flex-col gap-3">
+        <p role="status" className="sr-only">
+          Loading form…
+        </p>
+        <Skeleton className="h-96 w-full rounded-lg" />
+      </div>
+    );
+  }
+  return <DetailsForm {...props} />;
+}
+
+function DetailsForm({ exam, onCreated, onSaved }: Props) {
   const isNew = exam === undefined;
   const queryClient = useQueryClient();
   const categories = useAdminCategories();
