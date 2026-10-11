@@ -2,7 +2,6 @@ package com.leenex.exam.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -19,10 +18,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -34,6 +36,7 @@ import org.springframework.test.web.servlet.MockMvc;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@ExtendWith(OutputCaptureExtension.class)
 class GatewayRoutingTests {
 
     private static final List<String> SERVICES = List.of("identity", "catalog", "assessment", "learning", "subscription");
@@ -86,10 +89,13 @@ class GatewayRoutingTests {
         "/api/payments/webhooks/sandbox,      subscription",
         "/api/admin/billing/policies,         subscription"
     })
-    void routesEachPathToItsOwningService(String path, String service) throws Exception {
-        mvc.perform(get(path))
-                .andExpect(status().isOk())
-                .andExpect(content().string(service + " " + path));
+    void routesEachPathToItsOwningService(String path, String service, CapturedOutput output) throws Exception {
+        var response = mvc.perform(get(path)).andReturn().getResponse();
+        assertThat(response.getStatus())
+                .as("status for %s; body: %s; upstream saw: %s; log tail: %s", path, response.getContentAsString(), RECEIVED,
+                        tail(output.getAll(), 4000))
+                .isEqualTo(200);
+        assertThat(response.getContentAsString()).isEqualTo(service + " " + path);
     }
 
     @Test
@@ -123,6 +129,10 @@ class GatewayRoutingTests {
         mvc.perform(get("/actuator/health/readiness"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
+    }
+
+    private static String tail(String text, int max) {
+        return text.length() <= max ? text : text.substring(text.length() - max);
     }
 
     private static HttpServer startUpstream(String name) {
