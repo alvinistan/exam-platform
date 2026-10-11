@@ -1,6 +1,6 @@
 # ADR-002: Technology versions
 
-- **Status:** Accepted (Phase 3, 11 Oct 2026)
+- **Status:** Accepted (Phase 3, 11 Oct 2026); versions pinned in Phase 4
 - **Deciders:** Product owner (client), development lead
 
 ## Context
@@ -18,3 +18,29 @@ Newest lines may have early library gaps; fallback is the previous minor (Boot 4
 ## Alternatives considered
 
 Boot 3.5 (end-of-life); TypeScript 7.0 (too new for the toolchain today).
+
+## Pinned versions (Phase 4, verified by CI on 11 Oct 2026)
+
+| Area | Version | Notes |
+| --- | --- | --- |
+| Java | 21 (Temurin) | CI and runtime images |
+| Spring Boot | 4.1.1 | Parent POM |
+| Spring Cloud | 2025.1.3 (Oakwood) | Supports Boot 4.1.x from 2025.1.2 |
+| springdoc-openapi | 3.0.3 | |
+| Tomcat (override) | 11.0.25 | Fixes three CRITICAL CVEs in Boot 4.1.1's 11.0.24 |
+| Jackson 3 / 2 (override) | 3.1.7 / 2.21.7 | Fixes HIGH CVEs in 3.1.5 / 2.21.5 |
+| Apache HttpClient | 5 (Boot-managed) | Gateway upstream client; the JDK client raced on proxied bodies |
+| PostgreSQL | 16 (alpine) | Compose, CI, Testcontainers |
+| Node.js | 24 LTS | CI and web image build |
+| React / React DOM | 19.3.0 | |
+| Vite / plugin-react | 8.3.4 / 6.1.2 | |
+| Tailwind CSS | 4.3.3 | |
+| React Router | 8.4.0 | |
+| TanStack Query | 5.104.1 | |
+| TypeScript | 5.9.3 | 7.0 deferred (typescript-eslint supports < 6.1) |
+| Vitest / Testing Library | 5.0.3 / 16.3.3 | |
+| ESLint / typescript-eslint | 10.12.0 / 8.71.1 | |
+| Caddy | 2.11 (alpine) | Web server image |
+
+React Hook Form and Zod are added with the first forms (Phase 5 onwards). Overrides are removed once a Spring Boot
+patch release manages an equal or newer version; Dependabot raises those updates weekly.

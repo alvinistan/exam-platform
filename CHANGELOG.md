@@ -12,7 +12,10 @@
 - Docker images (non-root), Docker Compose stack with one database and login per service, Caddy web server
   with security headers.
 - GitHub Actions CI: backend tests with Testcontainers, web lint/typecheck/tests/build, OpenAPI lint,
-  migration and schema-rule checks, Trivy dependency/secret/image scans; Dependabot.
+  migration and schema-rule checks, Trivy dependency/secret/image scans; Dependabot. Failures and scan findings
+  appear as annotations on the pull request.
+- Security overrides from the first image scan: Tomcat 11.0.25, Jackson 3.1.7 / 2.21.7, Caddy 2.11, `apk upgrade`.
+- Gateway proxies with Apache HttpClient 5 (the JDK client failed intermittently on proxied requests).
 
 ## Phase 3 — Architecture and technical design
 
