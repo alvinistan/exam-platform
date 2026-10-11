@@ -1,0 +1,88 @@
+package com.leenex.exam.catalog.exam;
+
+import com.leenex.exam.catalog.exam.ExamRepository.ContentCounts;
+import com.leenex.exam.platform.web.ApiException;
+import com.leenex.exam.platform.web.ProblemCode;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.stereotype.Component;
+
+/**
+ * Decides whether an exam can be published (FR-CAT-05), and keeps published exams publishable when their content or
+ * settings change.
+ *
+ * <p>Question counts use the Main bank: it holds an exam's full content. Trial-bank counts are reported separately for
+ * information; how the free path uses them is decided with the access rules in a later phase.
+ */
+@Component
+public class PublishReadiness {
+
+    public record Readiness(boolean ready, List<String> blockers) {
+    }
+
+    private final ExamRepository exams;
+    private final ModeRepository modes;
+    private final JdbcClient jdbc;
+
+    public PublishReadiness(ExamRepository exams, ModeRepository modes, JdbcClient jdbc) {
+        this.exams = exams;
+        this.modes = modes;
+        this.jdbc = jdbc;
+    }
+
+    public Readiness evaluate(ExamRow exam) {
+        return evaluate(exam, exams.counts(exam.id()));
+    }
+
+    public Readiness evaluate(ExamRow exam, ContentCounts counts) {
+        List<String> blockers = new ArrayList<>();
+        String categoryStatus = jdbc.sql("SELECT status FROM catalog.exam_category WHERE id = :id")
+                .param("id", exam.categoryId()).query(String.class).single();
+        if (!"ACTIVE".equals(categoryStatus)) {
+            blockers.add("The exam's category is archived. Choose an active category.");
+        }
+        List<ModeSettings> enabled = modes.enabled(exam.id());
+        if (enabled.isEmpty()) {
+            blockers.add("Enable at least one exam mode.");
+        }
+        if (counts.topics() == 0) {
+            blockers.add("Link at least one subject that has an active topic.");
+        }
+        for (ModeSettings mode : enabled) {
+            if (counts.publishedMain() < mode.minCount()) {
+                blockers.add(ModeSettings.label(mode.mode()) + " needs at least " + mode.minCount()
+                        + " published questions; " + counts.publishedMain() + " published.");
+            }
+        }
+        if (exam.displayOrder() != null) {
+            exams.publishedAtPosition(exam.displayOrder(), exam.id()).ifPresent(other -> blockers.add(
+                    "Catalogue position " + exam.displayOrder() + " is used by the published exam \"" + other.title()
+                            + "\". Choose another position."));
+        }
+        return new Readiness(blockers.isEmpty(), List.copyOf(blockers));
+    }
+
+    /**
+     * Call at the end of a change, inside its transaction: if a published exam would stop being publishable, the change
+     * is refused with PUBLISH_BLOCKED and rolled back.
+     */
+    public void requireStillPublishable(Collection<UUID> examIds) {
+        for (UUID examId : examIds) {
+            ExamRow exam = exams.findById(examId).orElseThrow();
+            if (!exam.published()) {
+                continue;
+            }
+            Readiness readiness = evaluate(exam);
+            if (!readiness.ready()) {
+                throw new ApiException(ProblemCode.PUBLISH_BLOCKED,
+                        "This change would leave the published exam \"" + exam.title() + "\" unable to run. "
+                                + "Archive the exam first, or fix the problems listed.",
+                        Map.of("blockers", readiness.blockers()));
+            }
+        }
+    }
+}
