@@ -1,7 +1,16 @@
 import { Navigate, type RouteObject } from 'react-router';
 import { PublicLayout } from '@/components/layout/PublicLayout';
-import { AccountPage, AdminLayout, UsersPage } from './lazyPages';
+import {
+  AccountPage,
+  AdminExamsPage,
+  AdminLayout,
+  CategoriesPage,
+  ContentLibraryPage,
+  ExamEditorPage,
+  UsersPage,
+} from './lazyPages';
 import { SignInPage } from '@/features/auth/SignInPage';
+import { CataloguePage } from '@/features/exams/CataloguePage';
 import { ExamPage } from '@/features/exams/ExamPage';
 import { HomePage } from '@/features/home/HomePage';
 import { NotFoundPage } from '@/features/NotFoundPage';
@@ -16,6 +25,7 @@ export const routes: RouteObject[] = [
     element: <PublicLayout />,
     children: [
       { index: true, element: <HomePage /> },
+      { path: 'exams', element: <CataloguePage /> },
       { path: 'exams/:slug', element: <ExamPage /> },
       { path: 'signin', element: <SignInPage /> },
       {
@@ -34,7 +44,12 @@ export const routes: RouteObject[] = [
           </RequireRole>
         ),
         children: [
-          { index: true, element: <Navigate to="users" replace /> },
+          { index: true, element: <Navigate to="exams" replace /> },
+          { path: 'exams', element: <AdminExamsPage /> },
+          { path: 'exams/new', element: <ExamEditorPage /> },
+          { path: 'exams/:examId', element: <ExamEditorPage /> },
+          { path: 'categories', element: <CategoriesPage /> },
+          { path: 'content', element: <ContentLibraryPage /> },
           { path: 'users', element: <UsersPage /> },
         ],
       },
