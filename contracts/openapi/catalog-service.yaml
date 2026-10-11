@@ -1,0 +1,731 @@
+openapi: 3.1.0
+info:
+  title: catalog-service
+  version: 0.1.0
+  description: >-
+    Exam catalogue, content tree, mode configuration and the trial/main question banks.
+    Public reads under /api/categories and /api/exams; administration under /api/admin/catalog;
+    service-to-service calls under /internal (never routed by the gateway).
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: /
+    description: Same origin, through the API gateway (local default http://localhost:8080)
+tags:
+  - name: Catalogue
+    description: Public exam browsing (no question content)
+  - name: Admin exams
+    description: Exam definitions, content tree and mode settings
+  - name: Admin questions
+    description: Question bank, versions, imports and media
+  - name: Internal
+    description: Service-to-service only; requires a service token with scope catalog.internal
+security:
+  - bearerAuth: []
+paths:
+  /api/categories:
+    get:
+      tags: [Catalogue]
+      operationId: listCategories
+      summary: List active categories
+      security: [{}, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Categories in display order.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Category' } }
+        '429':
+          $ref: './common.yaml#/components/responses/TooManyRequests'
+  /api/exams:
+    get:
+      tags: [Catalogue]
+      operationId: listExams
+      summary: Browse published exams
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - $ref: './common.yaml#/components/parameters/Page'
+        - $ref: './common.yaml#/components/parameters/Size'
+        - { name: q, in: query, description: Title or description contains, schema: { type: string, maxLength: 100 } }
+        - { name: category, in: query, description: Category slug, schema: { type: string } }
+        - { name: featured, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Page of exam summaries. Access labels come from subscription-service (GET /api/access/exams).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/ExamSummary' } }
+                  page: { $ref: './common.yaml#/components/schemas/PageMeta' }
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+  /api/exams/by-slug/{slug}:
+    get:
+      tags: [Catalogue]
+      operationId: getExamBySlug
+      summary: Resolve an exam URL
+      description: Returns a published exam's public detail. A retired slug returns 301 to the current one. Draft or archived exams return 404 with code NOT_FOUND or EXAM_UNAVAILABLE.
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - { name: slug, in: path, required: true, schema: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' } }
+      responses:
+        '200':
+          description: Exam detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExamDetail' }
+        '301':
+          description: Slug was renamed.
+          headers:
+            Location:
+              description: Path with the current slug.
+              schema: { type: string }
+        '404':
+          $ref: './common.yaml#/components/responses/NotFound'
+
+  /api/admin/catalog/categories:
+    post:
+      tags: [Admin exams]
+      operationId: createCategory
+      summary: Create a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CategoryInput' }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/Category' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/exams:
+    get:
+      tags: [Admin exams]
+      operationId: adminListExams
+      summary: List exams in any status
+      parameters:
+        - $ref: './common.yaml#/components/parameters/Page'
+        - $ref: './common.yaml#/components/parameters/Size'
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: status, in: query, schema: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] } }
+        - { name: categoryId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Page of exams with publish readiness.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/AdminExam' } }
+                  page: { $ref: './common.yaml#/components/schemas/PageMeta' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+    post:
+      tags: [Admin exams]
+      operationId: createExam
+      summary: Create a draft exam
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExamInput' }
+      responses:
+        '201': { description: Created as DRAFT., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExam' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '409': { description: Slug taken (code SLUG_TAKEN)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/catalog/exams/{examId}:
+    parameters:
+      - $ref: '#/components/parameters/ExamId'
+    patch:
+      tags: [Admin exams]
+      operationId: updateExam
+      summary: Update exam details
+      parameters:
+        - { name: If-Match, in: header, required: true, description: Version for optimistic locking., schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExamInput' }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExam' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/exams/{examId}/publish:
+    post:
+      tags: [Admin exams]
+      operationId: publishExam
+      summary: Publish an exam
+      description: Refused with PUBLISH_BLOCKED and a list of reasons until FR-CAT-05 holds. Emits ExamPublished.
+      parameters:
+        - $ref: '#/components/parameters/ExamId'
+      responses:
+        '200': { description: Published., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExam' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/exams/{examId}/archive:
+    post:
+      tags: [Admin exams]
+      operationId: archiveExam
+      summary: Archive an exam
+      parameters:
+        - $ref: '#/components/parameters/ExamId'
+      responses:
+        '200': { description: Archived; attempts remain viewable., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExam' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/exams/{examId}/modes/{mode}:
+    put:
+      tags: [Admin exams]
+      operationId: configureMode
+      summary: Configure one exam mode
+      parameters:
+        - $ref: '#/components/parameters/ExamId'
+        - { name: mode, in: path, required: true, schema: { $ref: './common.yaml#/components/schemas/Mode' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ModeConfig' }
+      responses:
+        '200': { description: Saved., content: { application/json: { schema: { $ref: '#/components/schemas/ModeConfig' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/catalog/topics:
+    post:
+      tags: [Admin exams]
+      operationId: createTopic
+      summary: Add a topic to a module
+      description: Subjects and modules have matching create/update endpoints (/subjects, /modules) with the same shape.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [moduleId, title]
+              properties:
+                moduleId: { type: string, format: uuid }
+                title: { type: string, minLength: 2, maxLength: 160 }
+                displayOrder: { type: integer }
+                prerequisiteTopicIds: { type: array, items: { type: string, format: uuid } }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/TopicNode' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+
+  /api/admin/catalog/questions:
+    get:
+      tags: [Admin questions]
+      operationId: searchQuestions
+      summary: Search the question bank
+      parameters:
+        - $ref: './common.yaml#/components/parameters/Page'
+        - $ref: './common.yaml#/components/parameters/Size'
+        - { name: q, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: bank, in: query, schema: { type: string, enum: [TRIAL, MAIN] } }
+        - { name: topicId, in: query, schema: { type: string, format: uuid } }
+        - { name: examId, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [DRAFT, REVIEWED, PUBLISHED, ARCHIVED] } }
+        - { name: difficulty, in: query, schema: { $ref: './common.yaml#/components/schemas/Difficulty' } }
+        - { name: tag, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [updatedAt, -updatedAt, difficulty], default: -updatedAt } }
+      responses:
+        '200':
+          description: Page of questions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/QuestionSummary' } }
+                  page: { $ref: './common.yaml#/components/schemas/PageMeta' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+    post:
+      tags: [Admin questions]
+      operationId: createQuestion
+      summary: Create a draft question
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuestionInput' }
+      responses:
+        '201': { description: Created as DRAFT., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionAdmin' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/catalog/questions/{questionId}:
+    parameters:
+      - { name: questionId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Admin questions]
+      operationId: getQuestion
+      summary: Get a question with its current version
+      responses:
+        '200': { description: Question., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionAdmin' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+    put:
+      tags: [Admin questions]
+      operationId: saveQuestion
+      summary: Save edits
+      description: Edits the draft version in place; if the current version is frozen (published), a new draft version is created.
+      parameters:
+        - { name: If-Match, in: header, required: true, description: Version for optimistic locking., schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuestionInput' }
+      responses:
+        '200': { description: Saved., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionAdmin' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/questions/{questionId}/transitions:
+    post:
+      tags: [Admin questions]
+      operationId: transitionQuestion
+      summary: Move a question through its workflow
+      description: DRAFT→REVIEWED requires FR-QB-04 validation; REVIEWED→PUBLISHED freezes the version.
+      parameters:
+        - { name: questionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to]
+              properties:
+                to: { type: string, enum: [REVIEWED, PUBLISHED, ARCHIVED, DRAFT] }
+      responses:
+        '200': { description: Moved., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionAdmin' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/question-imports:
+    post:
+      tags: [Admin questions]
+      operationId: uploadQuestionImport
+      summary: Upload a CSV or XLSX import for validation
+      description: Nothing is saved yet. Returns a per-row report; confirm to create the valid rows as drafts.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, examId]
+              properties:
+                file: { type: string, format: binary, description: 'Max 5 MB; .csv or .xlsx from the approved template' }
+                examId: { type: string, format: uuid }
+                bank: { type: string, enum: [TRIAL, MAIN], default: MAIN }
+      responses:
+        '201':
+          description: Validation report.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportReport' }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/catalog/question-imports/{importId}/confirm:
+    post:
+      tags: [Admin questions]
+      operationId: confirmQuestionImport
+      summary: Create the valid rows as draft questions
+      parameters:
+        - { name: importId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Rows created., content: { application/json: { schema: { $ref: '#/components/schemas/ImportReport' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/media:
+    post:
+      tags: [Admin questions]
+      operationId: uploadMedia
+      summary: Upload a question image
+      description: PNG, JPEG or WebP up to 2 MB. Content is sniffed (magic bytes), re-encoded and stripped of metadata before storage.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [key]
+                properties:
+                  key: { type: string }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+
+  /internal/question-selection:
+    post:
+      tags: [Internal]
+      operationId: selectQuestions
+      summary: Select a question set (assessment-service)
+      description: >-
+        Applies SG-1..SG-6 against the permitted bank and returns versions with answer keys. Only callable with a
+        service token (scope catalog.internal); never routed by the gateway. Fails with INSUFFICIENT_QUESTIONS when the pool is too small.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SelectionRequest' }
+      responses:
+        '200':
+          description: Selected questions with answer keys (for assessment-service's snapshot only).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [questions, estimatedSeconds]
+                properties:
+                  questions: { type: array, items: { $ref: '#/components/schemas/SelectedQuestion' } }
+                  estimatedSeconds: { type: integer }
+                  substitutions: { type: array, items: { type: string } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /internal/question-versions:
+    get:
+      tags: [Internal]
+      operationId: getQuestionVersions
+      summary: Display content of frozen question versions (no answer keys)
+      description: Versions are immutable once published, so callers may cache responses indefinitely.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          style: form
+          explode: false
+          schema: { type: array, maxItems: 200, items: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Display content; explanations included separately for post-disclosure use.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/QuestionDisplay' } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+  /internal/events:
+    get:
+      tags: [Internal]
+      operationId: catalogEventFeed
+      summary: Outbox event feed (ADR-006)
+      parameters:
+        - { name: after, in: query, required: true, description: Last sequence number the consumer processed., schema: { type: integer, minimum: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        '200':
+          description: Events in sequence order.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/EventEnvelope' } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ExamId:
+      name: examId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    Category:
+      type: object
+      required: [id, name, slug]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: [string, 'null'] }
+        displayOrder: { type: integer }
+    CategoryInput:
+      type: object
+      required: [name, slug]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 80 }
+        slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
+        description: { type: string, maxLength: 500 }
+        displayOrder: { type: integer }
+    ExamSummary:
+      type: object
+      required: [id, title, slug, categoryId, modes]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        categoryId: { type: string, format: uuid }
+        shortDescription: { type: string }
+        coverUrl: { type: [string, 'null'], format: uri }
+        featured: { type: boolean }
+        displayOrder: { type: [integer, 'null'] }
+        modes: { type: array, items: { $ref: './common.yaml#/components/schemas/Mode' } }
+    ExamDetail:
+      allOf:
+        - $ref: '#/components/schemas/ExamSummary'
+        - type: object
+          required: [instructions, subjects, modeSettings]
+          properties:
+            instructions: { type: string }
+            seo:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+            subjects: { type: array, items: { $ref: '#/components/schemas/SubjectNode' } }
+            modeSettings:
+              type: array
+              description: Public subset only (counts, duration, feedback timing); never answer keys.
+              items: { $ref: '#/components/schemas/ModeConfig' }
+    SubjectNode:
+      type: object
+      required: [id, title, modules]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        modules:
+          type: array
+          items:
+            type: object
+            required: [id, title, topics]
+            properties:
+              id: { type: string, format: uuid }
+              title: { type: string }
+              topics: { type: array, items: { $ref: '#/components/schemas/TopicNode' } }
+    TopicNode:
+      type: object
+      required: [id, title]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        displayOrder: { type: integer }
+    ExamInput:
+      type: object
+      required: [title, slug, categoryId]
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 2, maxLength: 160 }
+        slug: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$', maxLength: 80 }
+        categoryId: { type: string, format: uuid }
+        shortDescription: { type: string, maxLength: 300 }
+        instructions: { type: string, maxLength: 5000 }
+        coverMediaKey: { type: string }
+        seoTitle: { type: string, maxLength: 70 }
+        seoDescription: { type: string, maxLength: 160 }
+        displayOrder: { type: integer, minimum: 1 }
+        featured: { type: boolean }
+        subjectIds: { type: array, items: { type: string, format: uuid } }
+    AdminExam:
+      allOf:
+        - $ref: '#/components/schemas/ExamSummary'
+        - type: object
+          required: [status, version, publishReadiness]
+          properties:
+            status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
+            publishedAt: { type: [string, 'null'], format: date-time }
+            version: { type: integer }
+            publishedQuestionCount: { type: integer }
+            publishReadiness:
+              type: object
+              required: [ready, blockers]
+              properties:
+                ready: { type: boolean }
+                blockers: { type: array, items: { type: string }, examples: [['MOCK needs 40 published questions; 12 published']] }
+    ModeConfig:
+      type: object
+      required: [mode, enabled]
+      properties:
+        mode: { $ref: './common.yaml#/components/schemas/Mode' }
+        enabled: { type: boolean }
+        defaultCount: { type: integer, minimum: 1 }
+        minCount: { type: integer, minimum: 1 }
+        maxCount: { type: integer, maximum: 500 }
+        timeLimitSeconds: { type: [integer, 'null'], minimum: 60 }
+        perQuestionSeconds: { type: [integer, 'null'] }
+        difficultyMix:
+          type: object
+          properties:
+            simple: { type: integer }
+            medium: { type: integer }
+            hard: { type: integer }
+        shuffleQuestions: { type: boolean }
+        shuffleOptions: { type: boolean }
+        feedbackTiming: { type: string, enum: [IMMEDIATE, AFTER_SUBMIT] }
+        resultVisibility: { type: string, enum: [SCORE_ONLY, SCORE_AND_ANSWERS, FULL] }
+        negativeMark: { type: number, minimum: 0, maximum: 1 }
+        passMarkPct: { type: [integer, 'null'] }
+        allowTopicChoice: { type: boolean }
+        adaptiveEnabled: { type: boolean }
+        maxRetakes: { type: [integer, 'null'] }
+    OptionInput:
+      type: object
+      required: [label, bodyHtml, isCorrect]
+      properties:
+        label: { type: string, enum: [A, B, C, D, E] }
+        bodyHtml: { type: string, maxLength: 4000 }
+        mediaKey: { type: string }
+        mediaAlt: { type: string, maxLength: 250 }
+        isCorrect: { type: boolean }
+        misconceptionId: { type: [string, 'null'], format: uuid }
+    QuestionInput:
+      type: object
+      required: [topicId, bank, answerType, stemHtml, options, difficulty, estSeconds]
+      properties:
+        topicId: { type: string, format: uuid }
+        bank: { type: string, enum: [TRIAL, MAIN] }
+        answerType: { type: string, enum: [SINGLE, MULTI] }
+        stemHtml: { type: string, maxLength: 20000, description: Sanitised server-side with an allow-list. }
+        stemMediaKey: { type: string }
+        stemMediaAlt: { type: string, maxLength: 250 }
+        options: { type: array, minItems: 4, maxItems: 5, items: { $ref: '#/components/schemas/OptionInput' } }
+        explanationHtml: { type: string, maxLength: 20000 }
+        definitions:
+          type: array
+          items: { type: object, required: [term, meaning], properties: { term: { type: string }, meaning: { type: string } } }
+        keyPoints: { type: array, maxItems: 10, items: { type: string, maxLength: 300 } }
+        difficulty: { $ref: './common.yaml#/components/schemas/Difficulty' }
+        estSeconds: { type: integer, minimum: 10, maximum: 600 }
+        marks: { type: number, exclusiveMinimum: 0, default: 1 }
+        tags: { type: array, items: { type: string } }
+    QuestionSummary:
+      type: object
+      required: [id, bank, status, topicId, difficulty, stemText, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        bank: { type: string, enum: [TRIAL, MAIN] }
+        status: { type: string, enum: [DRAFT, REVIEWED, PUBLISHED, ARCHIVED] }
+        topicId: { type: string, format: uuid }
+        difficulty: { $ref: './common.yaml#/components/schemas/Difficulty' }
+        stemText: { type: string }
+        updatedAt: { type: string, format: date-time }
+    QuestionAdmin:
+      allOf:
+        - $ref: '#/components/schemas/QuestionInput'
+        - type: object
+          required: [id, status, versionNo, version, validation]
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [DRAFT, REVIEWED, PUBLISHED, ARCHIVED] }
+            versionNo: { type: integer }
+            version: { type: integer }
+            validation:
+              type: object
+              required: [valid, problems]
+              properties:
+                valid: { type: boolean }
+                problems: { type: array, items: { type: string } }
+    ImportReport:
+      type: object
+      required: [importId, totalRows, validRows, errors]
+      properties:
+        importId: { type: string, format: uuid }
+        totalRows: { type: integer }
+        validRows: { type: integer }
+        createdQuestionIds: { type: array, items: { type: string, format: uuid } }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [row, column, message]
+            properties:
+              row: { type: integer }
+              column: { type: string }
+              message: { type: string }
+    SelectionRequest:
+      type: object
+      required: [examId, mode, bank, topicIds, generation]
+      properties:
+        examId: { type: string, format: uuid }
+        mode: { $ref: './common.yaml#/components/schemas/Mode' }
+        bank: { type: string, enum: [TRIAL, MAIN] }
+        topicIds: { type: array, minItems: 1, items: { type: string, format: uuid } }
+        generation: { type: string, enum: [COUNT, TIME, FIXED] }
+        count: { type: integer, minimum: 1 }
+        seconds: { type: integer, minimum: 60 }
+        topicWeights: { type: object, additionalProperties: { type: number } }
+        difficultyMix: { type: object, additionalProperties: { type: integer } }
+        excludeQuestionIds: { type: array, items: { type: string, format: uuid } }
+        preferQuestionIds: { type: array, items: { type: string, format: uuid } }
+    SelectedQuestion:
+      type: object
+      required: [questionId, versionId, topicId, difficulty, estSeconds, answerType, labels, correctLabels, marks]
+      properties:
+        questionId: { type: string, format: uuid }
+        versionId: { type: string, format: uuid }
+        topicId: { type: string, format: uuid }
+        difficulty: { $ref: './common.yaml#/components/schemas/Difficulty' }
+        estSeconds: { type: integer }
+        answerType: { type: string, enum: [SINGLE, MULTI] }
+        labels: { type: array, items: { type: string } }
+        correctLabels: { type: array, items: { type: string } }
+        misconceptionByLabel: { type: object, additionalProperties: { type: string, format: uuid } }
+        marks: { type: number }
+    QuestionDisplay:
+      type: object
+      required: [versionId, stemHtml, options]
+      properties:
+        versionId: { type: string, format: uuid }
+        stemHtml: { type: string }
+        stemMediaUrl: { type: [string, 'null'], description: Short-lived signed URL. }
+        stemMediaAlt: { type: [string, 'null'] }
+        options:
+          type: array
+          items:
+            type: object
+            required: [label, bodyHtml]
+            properties:
+              label: { type: string }
+              bodyHtml: { type: string }
+              mediaUrl: { type: [string, 'null'] }
+              mediaAlt: { type: [string, 'null'] }
+        explanationHtml: { type: [string, 'null'] }
+        definitions: { type: array, items: { type: object } }
+        keyPoints: { type: array, items: { type: string } }
+    EventEnvelope:
+      type: object
+      required: [seq, id, type, occurredAt, payload]
+      properties:
+        seq: { type: integer }
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [ExamPublished, ExamUpdated, ExamArchived] }
+        occurredAt: { type: string, format: date-time }
+        payload: { type: object }

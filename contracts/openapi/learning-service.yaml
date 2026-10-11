@@ -1,0 +1,227 @@
+openapi: 3.1.0
+info:
+  title: learning-service
+  version: 0.1.0
+  description: Topic mastery, misconceptions, learning levels, recommendations and goals. Routed under /api/learning and /api/admin/learning.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: /
+    description: Same origin, through the API gateway (local default http://localhost:8080)
+tags:
+  - name: Learning
+    description: The signed-in student's learning profile
+  - name: Admin learning
+    description: Aggregate learning analytics for administrators
+  - name: Internal
+    description: Service-to-service only
+security:
+  - bearerAuth: []
+paths:
+  /api/learning/topics:
+    get:
+      tags: [Learning]
+      operationId: getTopicMastery
+      summary: My mastery per topic
+      parameters:
+        - { name: examId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: One entry per topic the student has touched in this exam.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/TopicMastery' } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+  /api/learning/misconceptions:
+    get:
+      tags: [Learning]
+      operationId: getMisconceptions
+      summary: My possible and repeated misconceptions
+      parameters:
+        - { name: examId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Misconceptions with confidence labels (MC-1..MC-3).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [misconceptionId, title, label, occurrences, lastSeenAt]
+                  properties:
+                    misconceptionId: { type: string, format: uuid }
+                    title: { type: string }
+                    description: { type: string }
+                    topicId: { type: string, format: uuid }
+                    label: { type: string, enum: [POSSIBLE, REPEATED, CONCEPT_REVIEW] }
+                    occurrences: { type: integer }
+                    lastSeenAt: { type: string, format: date-time }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+  /api/learning/recommendations/next:
+    get:
+      tags: [Learning]
+      operationId: getNextRecommendation
+      summary: My recommended next session
+      parameters:
+        - { name: examId, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: The pending recommendation., content: { application/json: { schema: { $ref: '#/components/schemas/Recommendation' } } } }
+        '204': { description: No recommendation yet (no completed attempts). }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+  /api/learning/recommendations/{recommendationId}/dismiss:
+    post:
+      tags: [Learning]
+      operationId: dismissRecommendation
+      summary: Dismiss a recommendation
+      parameters:
+        - { name: recommendationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Dismissed. }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+  /api/learning/progress:
+    get:
+      tags: [Learning]
+      operationId: getProgress
+      summary: Score trend and level history
+      parameters:
+        - { name: examId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: last, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+      responses:
+        '200':
+          description: Recent attempt scores and level changes with reasons.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [attempts, levelChanges]
+                properties:
+                  attempts:
+                    type: array
+                    items:
+                      type: object
+                      required: [attemptId, finishedAt, scorePct]
+                      properties:
+                        attemptId: { type: string, format: uuid }
+                        finishedAt: { type: string, format: date-time }
+                        scorePct: { type: number }
+                  levelChanges:
+                    type: array
+                    items:
+                      type: object
+                      required: [topicId, fromLevel, toLevel, reason, at]
+                      properties:
+                        topicId: { type: string, format: uuid }
+                        fromLevel: { type: integer }
+                        toLevel: { type: integer }
+                        reason: { type: string }
+                        at: { type: string, format: date-time }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+  /api/learning/goals:
+    post:
+      tags: [Learning]
+      operationId: setGoal
+      summary: Set a learning goal (FR-LRN-12)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [examId, topicIds, targetState]
+              properties:
+                examId: { type: string, format: uuid }
+                topicIds: { type: array, minItems: 1, items: { type: string, format: uuid } }
+                targetState: { type: string, enum: [DEVELOPING, STRONG] }
+      responses:
+        '201': { description: Goal created; replaces any active goal for this exam. }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+  /api/admin/learning/analytics:
+    get:
+      tags: [Admin learning]
+      operationId: getLearningAnalytics
+      summary: Aggregate accuracy and most-missed questions
+      parameters:
+        - { name: examId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Aggregates only; no individual answers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topicAccuracy: { type: array, items: { type: object } }
+                  mostMissedQuestions: { type: array, items: { type: object } }
+                  stateDistribution: { type: object }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /internal/question-plans:
+    post:
+      tags: [Internal]
+      operationId: planQuestions
+      summary: Adaptive weighting for a new session (assessment-service)
+      description: Returns topic weights, difficulty mix, questions to avoid (AD-6) and to retry (AD-2). If unavailable, assessment falls back to balanced selection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentId, examId, topicIds, count]
+              properties:
+                studentId: { type: string, format: uuid }
+                examId: { type: string, format: uuid }
+                topicIds: { type: array, items: { type: string, format: uuid } }
+                count: { type: integer }
+      responses:
+        '200':
+          description: Plan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [topicWeights, difficultyMix, avoidQuestionIds, retryQuestionIds]
+                properties:
+                  topicWeights: { type: object, additionalProperties: { type: number } }
+                  difficultyMix: { type: object, additionalProperties: { type: integer } }
+                  avoidQuestionIds: { type: array, items: { type: string, format: uuid } }
+                  retryQuestionIds: { type: array, items: { type: string, format: uuid } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    TopicMastery:
+      type: object
+      required: [topicId, state, level, attempted]
+      properties:
+        topicId: { type: string, format: uuid }
+        state: { $ref: './common.yaml#/components/schemas/MasteryState' }
+        weightedAccuracy: { type: [number, 'null'], minimum: 0, maximum: 1 }
+        windowSize: { type: integer }
+        attempted: { type: integer }
+        correct: { type: integer }
+        level: { type: integer, minimum: 1, maximum: 3 }
+        lastPractisedAt: { type: [string, 'null'], format: date-time }
+        reason: { type: string, description: 'Plain-language, e.g. "4 of your last 10 answers were correct".' }
+    Recommendation:
+      type: object
+      required: [id, examId, type, topicIds, questionCount, reason]
+      properties:
+        id: { type: string, format: uuid }
+        examId: { type: string, format: uuid }
+        type: { type: string, enum: [TARGETED, RETRY_MISSED, STEP_UP, REVISIT, BALANCED, GOAL] }
+        topicIds: { type: array, items: { type: string, format: uuid } }
+        questionCount: { type: integer }
+        level: { type: [integer, 'null'] }
+        reason: { type: string }
+        createdAt: { type: string, format: date-time }

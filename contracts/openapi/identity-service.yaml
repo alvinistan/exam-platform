@@ -1,0 +1,277 @@
+openapi: 3.1.0
+info:
+  title: identity-service
+  version: 0.1.0
+  description: Google sign-in, platform tokens, profiles, roles and account status. Routed by the gateway under /api/auth, /api/users and /api/admin/users.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: /
+    description: Same origin, through the API gateway (local default http://localhost:8080)
+tags:
+  - name: Auth
+    description: Sign-in and token lifecycle
+  - name: Users
+    description: The signed-in user's profile
+  - name: Admin users
+    description: Role and account management (Administrator only)
+  - name: Keys
+    description: Public keys other services use to verify tokens
+security:
+  - bearerAuth: []
+paths:
+  /api/auth/google/start:
+    get:
+      tags: [Auth]
+      operationId: startGoogleSignIn
+      summary: Start Google sign-in
+      description: Redirects to Google with state, nonce and PKCE (S256). The verifier is kept server-side, bound to a short-lived signed cookie.
+      security: []
+      parameters:
+        - name: returnTo
+          in: query
+          description: Relative path to return to after sign-in; anything not starting with "/" is ignored.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '302':
+          description: Redirect to Google's authorization endpoint.
+        '429':
+          $ref: './common.yaml#/components/responses/TooManyRequests'
+  /api/auth/google/callback:
+    get:
+      tags: [Auth]
+      operationId: completeGoogleSignIn
+      summary: Complete Google sign-in
+      description: >-
+        Exchanges the code, verifies the ID token (issuer, audience, nonce, expiry, email_verified), creates the
+        account on first sign-in (role STUDENT), sets the refresh-token cookie and redirects to the web app.
+      security: []
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '302':
+          description: Redirect to the web app with the session established.
+          headers:
+            Set-Cookie:
+              description: "__Host-rt=<refresh token>; Path=/; Secure; HttpOnly; SameSite=Strict"
+              schema: { type: string }
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+  /api/auth/token:
+    post:
+      tags: [Auth]
+      operationId: refreshAccessToken
+      summary: Get a new access token
+      description: >-
+        Rotates the refresh token (web: HttpOnly cookie; mobile: request body) and returns a 15-minute access token.
+        Reusing an already-rotated refresh token revokes the whole session family. Requires header X-Requested-With: fetch for cookie requests (CSRF defence).
+      security: []
+      parameters:
+        - name: X-Requested-With
+          in: header
+          required: false
+          schema: { type: string, enum: [fetch] }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string, description: Mobile clients only. }
+      responses:
+        '200':
+          description: New access token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '429':
+          $ref: './common.yaml#/components/responses/TooManyRequests'
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Sign out
+      description: Revokes the current refresh-token family and clears the cookie.
+      responses:
+        '204':
+          description: Signed out.
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+  /api/users/me:
+    get:
+      tags: [Users]
+      operationId: getMe
+      summary: Get my profile
+      responses:
+        '200':
+          description: Profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+    patch:
+      tags: [Users]
+      operationId: updateMe
+      summary: Update my profile
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: Version from the last GET (optimistic locking).
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                displayName: { type: string, minLength: 1, maxLength: 120 }
+                preferences: { type: object }
+      responses:
+        '200':
+          description: Updated profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400':
+          $ref: './common.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '409':
+          $ref: './common.yaml#/components/responses/Conflict'
+    delete:
+      tags: [Users]
+      operationId: deleteMe
+      summary: Delete my account
+      description: Anonymises personal data; aggregate statistics are kept (FR-ID-09).
+      responses:
+        '202':
+          description: Deletion scheduled.
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+  /api/admin/users:
+    get:
+      tags: [Admin users]
+      operationId: listUsers
+      summary: List users
+      parameters:
+        - $ref: './common.yaml#/components/parameters/Page'
+        - $ref: './common.yaml#/components/parameters/Size'
+        - { name: q, in: query, description: Name or email contains, schema: { type: string, maxLength: 100 } }
+        - { name: role, in: query, schema: { type: string, enum: [STUDENT, ADMIN] } }
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, SUSPENDED] } }
+      responses:
+        '200':
+          description: Page of users.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/User' } }
+                  page: { $ref: './common.yaml#/components/schemas/PageMeta' }
+        '401':
+          $ref: './common.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: './common.yaml#/components/responses/Forbidden'
+  /api/admin/users/{userId}/roles/{role}:
+    parameters:
+      - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: role, in: path, required: true, schema: { type: string, enum: [ADMIN] } }
+    put:
+      tags: [Admin users]
+      operationId: grantRole
+      summary: Grant the admin role
+      responses:
+        '204': { description: Granted (audited). }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+    delete:
+      tags: [Admin users]
+      operationId: revokeRole
+      summary: Revoke the admin role
+      description: An administrator cannot revoke their own admin role, and the last administrator cannot be demoted.
+      responses:
+        '204': { description: Revoked (audited). }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/users/{userId}/status:
+    put:
+      tags: [Admin users]
+      operationId: setUserStatus
+      summary: Suspend or reactivate an account
+      parameters:
+        - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, reason]
+              properties:
+                status: { type: string, enum: [ACTIVE, SUSPENDED] }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        '204': { description: Updated (audited); refresh tokens revoked on suspension. }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /.well-known/jwks.json:
+    get:
+      tags: [Keys]
+      operationId: getJwks
+      summary: Token verification keys
+      description: Public keys (ES256) used by every service to verify access tokens. Keys rotate; old keys stay listed until their tokens expire.
+      security: []
+      responses:
+        '200':
+          description: JSON Web Key Set.
+          content:
+            application/json:
+              schema: { type: object, required: [keys], properties: { keys: { type: array, items: { type: object } } } }
+        '429':
+          $ref: './common.yaml#/components/responses/TooManyRequests'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    TokenResponse:
+      type: object
+      required: [accessToken, expiresIn, tokenType]
+      properties:
+        accessToken: { type: string, description: 'JWT; claims: sub, roles, status, iat, exp, iss, aud' }
+        expiresIn: { type: integer, examples: [900] }
+        tokenType: { type: string, const: Bearer }
+        refreshToken: { type: string, description: Returned to mobile clients only. }
+    User:
+      type: object
+      required: [id, email, displayName, roles, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        photoUrl: { type: [string, 'null'], format: uri }
+        roles:
+          type: array
+          items: { type: string, enum: [STUDENT, ADMIN] }
+        status: { type: string, enum: [ACTIVE, SUSPENDED] }
+        preferences: { type: object }
+        createdAt: { type: string, format: date-time }
+        version: { type: integer }

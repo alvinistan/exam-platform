@@ -1,0 +1,13 @@
+# Lint configuration for the API contracts. Run from this folder:  npx @redocly/cli@2.62.1 lint
+# common.yaml is a shared component library (no servers/paths of its own); it is validated through the services that reference it.
+apis:
+  identity: { root: identity-service.yaml }
+  catalog: { root: catalog-service.yaml }
+  assessment: { root: assessment-service.yaml }
+  learning: { root: learning-service.yaml }
+  subscription: { root: subscription-service.yaml }
+extends:
+  - recommended
+rules:
+  # The Google sign-in endpoints (/api/auth/google/start and /callback) legitimately answer with a 302 redirect, not 2XX.
+  operation-2xx-response: off
