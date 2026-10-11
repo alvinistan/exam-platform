@@ -14,3 +14,8 @@ export const CategoriesPage = lazy(() =>
 export const ContentLibraryPage = lazy(() =>
   import('@/features/admin/catalog/ContentLibraryPage').then((m) => ({ default: m.ContentLibraryPage })),
 );
+export const QuestionsPage = lazy(() => import('@/features/admin/questions/QuestionsPage').then((m) => ({ default: m.QuestionsPage })));
+export const QuestionEditorPage = lazy(() =>
+  import('@/features/admin/questions/QuestionEditorPage').then((m) => ({ default: m.QuestionEditorPage })),
+);
+export const QuestionImportPage = lazy(() => import('@/features/admin/questions/ImportPage').then((m) => ({ default: m.ImportPage })));

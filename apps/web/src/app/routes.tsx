@@ -7,6 +7,9 @@ import {
   CategoriesPage,
   ContentLibraryPage,
   ExamEditorPage,
+  QuestionEditorPage,
+  QuestionImportPage,
+  QuestionsPage,
   UsersPage,
 } from './lazyPages';
 import { SignInPage } from '@/features/auth/SignInPage';
@@ -50,6 +53,10 @@ export const routes: RouteObject[] = [
           { path: 'exams/:examId', element: <ExamEditorPage /> },
           { path: 'categories', element: <CategoriesPage /> },
           { path: 'content', element: <ContentLibraryPage /> },
+          { path: 'questions', element: <QuestionsPage /> },
+          { path: 'questions/new', element: <QuestionEditorPage /> },
+          { path: 'questions/import', element: <QuestionImportPage /> },
+          { path: 'questions/:questionId', element: <QuestionEditorPage /> },
           { path: 'users', element: <UsersPage /> },
         ],
       },

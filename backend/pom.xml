@@ -84,6 +84,19 @@
                 </executions>
             </plugin>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- A stuck test fails after 3 minutes with its name, instead of hanging the whole build. -->
+                    <properties>
+                        <configurationParameters>
+                            junit.jupiter.execution.timeout.default = 3 m
+                            junit.jupiter.execution.timeout.thread.mode.default = SEPARATE_THREAD
+                        </configurationParameters>
+                    </properties>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.13</version>
