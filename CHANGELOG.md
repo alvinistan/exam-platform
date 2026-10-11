@@ -1,5 +1,24 @@
 # Changelog
 
+## Phase 7 — Question bank and content management
+
+- catalog-service: questions in the Trial and Main banks with rich text (allow-list sanitised), 4–5 options, single
+  or multi answer, images, explanation, key points, definitions, difficulty, solving time, marks and tags.
+- Workflow Draft → Reviewed → Published → Archived with FR-QB-04 checks; publishing freezes a version, later edits
+  create a new version while the published one stays live; discard unpublished changes; history of versions.
+- Leaving Published is refused when a published exam would no longer have enough questions.
+- Search and filters (text, tag, exam, subject, module, topic, status, difficulty, bank), sorting, 25/50/100 per page.
+- Bulk actions (change status, move topic, change bank by copy-and-archive), all or nothing, audited.
+- Misconception categories linked to wrong options.
+- Images: byte-sniffed, size- and dimension-limited, re-encoded, stored on a volume, served through signed links.
+- CSV/XLSX imports with templates, a per-row report and confirmation; nothing is saved until confirmed.
+- Migration V2: `question_import`, tag and recency indexes.
+- identity-service: `GET /api/admin/users/names` for "created by / changed by" names (FR-QB-12).
+- gateway: routes `/api/media/**`; forwards uploads untouched (multipart parsing off).
+- web: question list with bulk actions, editor (TipTap rich text) with live student preview, workflow panel, version
+  history, import wizard; reusable `QuestionView` for the attempt screens to come.
+- CI: each test times out after 3 minutes instead of hanging the build.
+
 ## Phase 6 — Configurable exam catalogue
 
 - catalog-service: categories (create, edit, archive/restore; archive refused while exams are published); content
