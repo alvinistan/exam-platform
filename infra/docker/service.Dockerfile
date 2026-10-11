@@ -13,6 +13,8 @@ RUN --mount=type=cache,target=/root/.m2 \
 
 FROM eclipse-temurin:21-jre-alpine
 ARG MODULE
+# Pick up Alpine security fixes released after the base image was built.
+RUN apk upgrade --no-cache
 LABEL org.opencontainers.image.source="https://github.com/alvinistan/exam-platform" \
       org.opencontainers.image.title="$MODULE"
 RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app

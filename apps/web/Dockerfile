@@ -9,7 +9,9 @@ RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY apps/web/ ./
 RUN npm run build
 
-FROM caddy:2.10-alpine
+FROM caddy:2.11-alpine
+# Pick up Alpine security fixes released after the base image was built.
+RUN apk upgrade --no-cache
 COPY infra/caddy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/dist /srv
 RUN addgroup -S -g 10001 web && adduser -S -D -H -u 10001 -G web web \
