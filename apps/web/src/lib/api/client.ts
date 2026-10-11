@@ -1,3 +1,4 @@
+import { getAccessToken, refreshAccessToken } from '@/lib/auth/session';
 import { ApiError, isProblem } from './problem';
 
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
@@ -24,17 +25,32 @@ function buildUrl(path: string, query?: RequestOptions['query']): string {
 /**
  * Typed fetch wrapper for the platform API (always same-origin, through the gateway).
  * Non-2xx responses become {@link ApiError} carrying the problem's stable `code`.
- * Access tokens are attached here from Phase 5.
+ *
+ * The access token is attached automatically. If the server answers 401 (token expired), the token is refreshed
+ * once and the request retried, so callers never handle expiry themselves.
  */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  let token = getAccessToken();
+  let response = await send(path, options, token);
+  if (response.status === 401) {
+    const renewed = await refreshAccessToken();
+    if (renewed && renewed !== token) {
+      token = renewed;
+      response = await send(path, options, token);
+    }
+  }
+  return parse<T>(response);
+}
+
+async function send(path: string, options: RequestOptions, token: string | null): Promise<Response> {
   const { json, query, headers, ...init } = options;
   const finalHeaders = new Headers(headers);
   finalHeaders.set('Accept', 'application/json, application/problem+json');
   if (json !== undefined) finalHeaders.set('Content-Type', 'application/json');
+  if (token) finalHeaders.set('Authorization', `Bearer ${token}`);
 
-  let response: Response;
   try {
-    response = await fetch(buildUrl(path, query), {
+    return await fetch(buildUrl(path, query), {
       ...init,
       headers: finalHeaders,
       credentials: 'same-origin',
@@ -44,7 +60,9 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
     throw new ApiError(0, 'NETWORK_ERROR', 'Could not reach the server. Check your connection and try again.');
   }
+}
 
+async function parse<T>(response: Response): Promise<T> {
   const correlationId = response.headers.get('X-Correlation-Id') ?? undefined;
   if (response.status === 204) return undefined as T;
 

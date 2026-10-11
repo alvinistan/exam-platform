@@ -6,3 +6,6 @@ export { Card } from './Card';
 export { TextField } from './Field';
 export { Skeleton } from './Skeleton';
 export { EmptyState, ErrorState } from './StateMessage';
+export { Avatar } from './Avatar';
+export { Dialog } from './Dialog';
+export { SelectField } from './Select';

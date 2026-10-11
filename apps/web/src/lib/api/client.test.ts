@@ -1,4 +1,5 @@
 import { jsonResponse } from '@/test/render';
+import { clearSession, refreshAccessToken } from '@/lib/auth/session';
 import { apiFetch } from './client';
 import { ApiError } from './problem';
 
@@ -11,7 +12,10 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   fetchMock.mockReset();
+  clearSession();
 });
+
+const unauthorized = () => jsonResponse({ type: 'about:blank', title: 'Sign-in required', status: 401, code: 'UNAUTHENTICATED' }, 401);
 
 describe('apiFetch', () => {
   it('calls the API through the same-origin /api prefix and returns JSON', async () => {
@@ -32,6 +36,43 @@ describe('apiFetch', () => {
     const init = fetchMock.mock.calls[0]?.[1];
     expect(init?.body).toBe('{"mode":"PRACTICE"}');
     expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json');
+  });
+
+  it('attaches the access token once signed in', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ accessToken: 'tok-1', expiresIn: 900 }));
+    await refreshAccessToken();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }));
+    await apiFetch('/users/me');
+    expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get('Authorization')).toBe('Bearer tok-1');
+  });
+
+  it('refreshes an expired access token once and retries the request', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ accessToken: 'old', expiresIn: 900 }));
+    await refreshAccessToken();
+    fetchMock
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(jsonResponse({ accessToken: 'new', expiresIn: 900 }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'me' }));
+    await expect(apiFetch('/users/me')).resolves.toEqual({ id: 'me' });
+    const calls = fetchMock.mock.calls.slice(1);
+    expect(calls.map((c) => c[0])).toEqual(['/api/users/me', '/api/auth/token', '/api/users/me']);
+    expect(new Headers(calls[2]?.[1]?.headers).get('Authorization')).toBe('Bearer new');
+    expect(new Headers(calls[1]?.[1]?.headers).get('X-Requested-With')).toBe('fetch');
+  });
+
+  it('reports 401 when the session cannot be renewed', async () => {
+    fetchMock.mockResolvedValueOnce(unauthorized()).mockResolvedValueOnce(unauthorized());
+    const error = (await apiFetch('/users/me').catch((e: unknown) => e)) as ApiError;
+    expect(error.status).toBe(401);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares one refresh between concurrent callers', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ accessToken: 'shared', expiresIn: 900 }));
+    const [a, b] = await Promise.all([refreshAccessToken(), refreshAccessToken()]);
+    expect(a).toBe('shared');
+    expect(b).toBe('shared');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('turns a problem response into an ApiError with its stable code', async () => {
