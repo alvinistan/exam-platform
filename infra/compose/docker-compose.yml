@@ -1,0 +1,129 @@
+# Local development stack: PostgreSQL, the five services, the gateway and the web app.
+# Run from the repository root (after copying .env.example to .env and filling in passwords):
+#   docker compose -f infra/compose/docker-compose.yml --env-file .env up --build
+# Then open http://localhost:8088 (web) or http://localhost:8080/actuator/health (gateway).
+name: leenex-exam
+
+x-service: &service
+  build: &service-build
+    context: ../..
+    dockerfile: infra/docker/service.Dockerfile
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+  environment: &service-env
+    SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+    SWAGGER_UI_ENABLED: "true"
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: [no-new-privileges:true]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env}
+      CATALOG_DB_PASSWORD: ${CATALOG_DB_PASSWORD:?set CATALOG_DB_PASSWORD in .env}
+      ASSESSMENT_DB_PASSWORD: ${ASSESSMENT_DB_PASSWORD:?set ASSESSMENT_DB_PASSWORD in .env}
+      LEARNING_DB_PASSWORD: ${LEARNING_DB_PASSWORD:?set LEARNING_DB_PASSWORD in .env}
+      BILLING_DB_PASSWORD: ${BILLING_DB_PASSWORD:?set BILLING_DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    # Local only, bound to this machine so database tools can connect. Never exposed in staging or production.
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d billing"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  identity-service:
+    <<: *service
+    build: { <<: *service-build, args: { MODULE: services/identity-service } }
+    environment:
+      <<: *service-env
+      SERVER_PORT: "8081"
+      DB_URL: jdbc:postgresql://postgres:5432/identity
+      DB_USERNAME: identity_svc
+      DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
+
+  catalog-service:
+    <<: *service
+    build: { <<: *service-build, args: { MODULE: services/catalog-service } }
+    environment:
+      <<: *service-env
+      SERVER_PORT: "8082"
+      DB_URL: jdbc:postgresql://postgres:5432/catalog
+      DB_USERNAME: catalog_svc
+      DB_PASSWORD: ${CATALOG_DB_PASSWORD}
+
+  assessment-service:
+    <<: *service
+    build: { <<: *service-build, args: { MODULE: services/assessment-service } }
+    environment:
+      <<: *service-env
+      SERVER_PORT: "8083"
+      DB_URL: jdbc:postgresql://postgres:5432/assessment
+      DB_USERNAME: assessment_svc
+      DB_PASSWORD: ${ASSESSMENT_DB_PASSWORD}
+
+  learning-service:
+    <<: *service
+    build: { <<: *service-build, args: { MODULE: services/learning-service } }
+    environment:
+      <<: *service-env
+      SERVER_PORT: "8084"
+      DB_URL: jdbc:postgresql://postgres:5432/learning
+      DB_USERNAME: learning_svc
+      DB_PASSWORD: ${LEARNING_DB_PASSWORD}
+
+  subscription-service:
+    <<: *service
+    build: { <<: *service-build, args: { MODULE: services/subscription-service } }
+    environment:
+      <<: *service-env
+      SERVER_PORT: "8085"
+      DB_URL: jdbc:postgresql://postgres:5432/billing
+      DB_USERNAME: billing_svc
+      DB_PASSWORD: ${BILLING_DB_PASSWORD}
+
+  gateway:
+    build: { <<: *service-build, args: { MODULE: gateway } }
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    environment:
+      SERVER_PORT: "8080"
+      IDENTITY_SERVICE_URL: http://identity-service:8081
+      CATALOG_SERVICE_URL: http://catalog-service:8082
+      ASSESSMENT_SERVICE_URL: http://assessment-service:8083
+      LEARNING_SERVICE_URL: http://learning-service:8084
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8085
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on:
+      identity-service: { condition: service_healthy }
+      catalog-service: { condition: service_healthy }
+      assessment-service: { condition: service_healthy }
+      learning-service: { condition: service_healthy }
+      subscription-service: { condition: service_healthy }
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ":8080"
+      GATEWAY_UPSTREAM: gateway:8080
+    ports: ["127.0.0.1:8088:8080"]
+    depends_on:
+      gateway: { condition: service_healthy }
+
+volumes:
+  pgdata:
