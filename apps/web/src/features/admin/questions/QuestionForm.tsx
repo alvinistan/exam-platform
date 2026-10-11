@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch, type FieldPath } from 'react-hook-form';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Eye, Plus, Trash2 } from 'lucide-react';
-import { Alert, Button, Card, Dialog, SelectField, TextAreaField, TextField } from '@/components/ui';
+import { Alert, Button, Card, Dialog, SelectField, Skeleton, TextAreaField, TextField } from '@/components/ui';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { useLibrary } from '@/features/admin/catalog/api';
 import { QuestionView } from '@/features/questions/QuestionView';
@@ -141,8 +141,26 @@ interface Props {
   onSaved: (q: QuestionDetail, created: boolean) => void;
 }
 
-/** The question editor with a live student preview (FR-QB-01, FR-QB-06). */
-export function QuestionForm({ question, initialTopicId, onSaved }: Props) {
+/**
+ * The question editor with a live student preview (FR-QB-01, FR-QB-06). It waits for the content library, because a
+ * native select can only show a value whose option already exists.
+ */
+export function QuestionForm(props: Props) {
+  const library = useLibrary();
+  if (library.isPending) {
+    return (
+      <div aria-busy="true">
+        <p role="status" className="sr-only">
+          Loading editor…
+        </p>
+        <Skeleton className="h-96 w-full rounded-lg" />
+      </div>
+    );
+  }
+  return <Editor {...props} />;
+}
+
+function Editor({ question, initialTopicId, onSaved }: Props) {
   const queryClient = useQueryClient();
   const isNew = question === undefined;
   const library = useLibrary();
@@ -348,7 +366,11 @@ export function QuestionForm({ question, initialTopicId, onSaved }: Props) {
                   {!option?.isCorrect && (
                     <div className="flex flex-wrap items-end gap-2">
                       <div className="min-w-56 flex-1">
-                        <SelectField label={`Misconception behind option ${label} (optional)`} {...register(`options.${i}.misconceptionId`)}>
+                        <SelectField
+                          label={`Misconception behind option ${label} (optional)`}
+                          value={option?.misconceptionId ?? ''}
+                          onChange={(e) => setValue(`options.${i}.misconceptionId`, e.target.value, { shouldDirty: true })}
+                        >
                           <option value="">None</option>
                           {misconceptions.data?.map((m) => (
                             <option key={m.id} value={m.id}>

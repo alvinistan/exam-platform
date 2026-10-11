@@ -87,7 +87,9 @@ class GatewayRoutingTests {
                         .header("Authorization", "Bearer " + TestTokens.admin(UUID.randomUUID()))
                         .contentType("multipart/form-data; boundary=leenex-boundary").content(body))
                 .andExpect(status().isOk());
-        assertThat(BODIES).containsExactly("multipart/form-data; boundary=leenex-boundary " + body.length);
+        // MockMvc adds a charset to the content type; the boundary and every byte must arrive unchanged.
+        assertThat(BODIES).singleElement().asString()
+                .startsWith("multipart/form-data; boundary=leenex-boundary").endsWith(" " + body.length);
     }
 
     @ParameterizedTest(name = "{0} -> {1}")
