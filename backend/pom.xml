@@ -29,7 +29,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Spring Cloud 2025.1.x (Oakwood) supports Spring Boot 4.1.x from 2025.1.2 onwards. -->
         <spring-cloud.version>2025.1.3</spring-cloud.version>
-        <springdoc.version>3.0.3</springdoc.version>
+        <springdoc.version>3.1.1</springdoc.version>
         <!-- Security overrides of versions managed by Spring Boot 4.1.1, from the CI image scan (Phase 4).
              Remove each one once a Spring Boot patch release manages an equal or newer version. -->
         <tomcat.version>11.0.25</tomcat.version>               <!-- CVE-2026-65182, -65905, -68525 (CRITICAL) -->
