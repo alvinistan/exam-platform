@@ -1,0 +1,55 @@
+# API gateway. Upstream URLs come from the environment (Docker Compose sets them to the service names).
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: gateway
+  threads:
+    virtual:
+      enabled: true
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            - id: identity
+              uri: ${IDENTITY_SERVICE_URL:http://localhost:8081}
+              predicates:
+                - Path=/api/auth/**,/api/users/**,/api/admin/users/**,/.well-known/jwks.json
+            - id: catalog
+              uri: ${CATALOG_SERVICE_URL:http://localhost:8082}
+              predicates:
+                - Path=/api/categories/**,/api/exams/**,/api/admin/catalog/**
+            - id: assessment
+              uri: ${ASSESSMENT_SERVICE_URL:http://localhost:8083}
+              predicates:
+                - Path=/api/attempts/**,/api/admin/attempts/**
+            - id: learning
+              uri: ${LEARNING_SERVICE_URL:http://localhost:8084}
+              predicates:
+                - Path=/api/learning/**,/api/admin/learning/**
+            - id: subscription
+              uri: ${SUBSCRIPTION_SERVICE_URL:http://localhost:8085}
+              predicates:
+                - Path=/api/access/**,/api/plans/**,/api/subscriptions/**,/api/payments/**,/api/admin/billing/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  info:
+    build:
+      enabled: true
+
+logging:
+  pattern:
+    correlation: "[${spring.application.name},%X{correlationId:-}] "

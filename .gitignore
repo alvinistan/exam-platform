@@ -1,0 +1,26 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Java / Maven
+target/
+*.class
+*.log
+hs_err_pid*
+
+# Node / web
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# IDEs and OS
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db

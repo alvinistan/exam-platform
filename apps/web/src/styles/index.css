@@ -1,0 +1,86 @@
+/*
+ * Leenex Labs design tokens — Direction A "Focused & Calm" (Phase 2 design system v0.2).
+ * Every colour, radius and shadow used by components comes from this file. Contrast ratios were checked in Phase 2:
+ * ink on surface 16.9:1, muted on surface 7.8:1, primary on white 7.0:1, all semantic inks ≥ 6:1 on their soft fills.
+ */
+@import 'tailwindcss';
+@import '@fontsource-variable/figtree';
+
+@theme {
+  --font-sans: 'Figtree Variable', 'Segoe UI', system-ui, sans-serif;
+
+  --color-ink: #14181f;
+  --color-ink-2: #333a45;
+  --color-muted: #4a5361;
+  --color-subtle: #6b7380;
+
+  --color-bg: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #eef0f4;
+  --color-border: #dde1e7;
+  --color-border-strong: #c9cfd8;
+
+  --color-primary: #0b3efb;
+  --color-primary-hover: #0a35d6;
+  --color-primary-soft: #e6ecff;
+  --color-primary-ink: #0a2fb8;
+
+  --color-brand-cyan: #17d2fc;
+  --color-brand-violet: #7741fb;
+  --color-brand-pink: #eb8dfc;
+
+  --color-success: #17803d;
+  --color-success-soft: #e7f5ec;
+  --color-success-ink: #126a32;
+  --color-danger: #c2312c;
+  --color-danger-soft: #fbeaea;
+  --color-danger-ink: #a12520;
+  --color-warning: #9a6200;
+  --color-warning-soft: #fdf3de;
+  --color-warning-ink: #7a4d00;
+  --color-premium: #7741fb;
+  --color-premium-hover: #6a35e8;
+  --color-premium-soft: #f1eaff;
+  --color-premium-ink: #5321c4;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --shadow-card: 0 1px 2px rgb(20 24 31 / 0.05), 0 6px 20px rgb(20 24 31 / 0.05);
+  --shadow-raised: 0 2px 6px rgb(20 24 31 / 0.08), 0 18px 40px rgb(20 24 31 / 0.1);
+
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+  @keyframes shimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-bg font-sans text-base/normal text-ink antialiased;
+  }
+  a {
+    @apply text-primary hover:text-primary-hover;
+  }
+  /* One focus ring everywhere: white gap + 2px primary, visible on any background. */
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--color-primary);
+    border-radius: var(--radius-sm);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
