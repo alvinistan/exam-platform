@@ -28,6 +28,11 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+platform:
+  security:
+    # identity-service's public signing keys; every access token is verified against them (ADR-004).
+    jwks-uri: ${IDENTITY_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+
 management:
   endpoints:
     web:

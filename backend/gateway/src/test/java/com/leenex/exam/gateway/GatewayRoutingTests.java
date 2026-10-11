@@ -2,10 +2,12 @@ package com.leenex.exam.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.leenex.exam.platform.security.TestTokens;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -13,6 +15,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterAll;
@@ -43,6 +46,8 @@ class GatewayRoutingTests {
     private static final Map<String, HttpServer> UPSTREAMS = new ConcurrentHashMap<>();
     private static final List<String> RECEIVED = new CopyOnWriteArrayList<>();
 
+    private static final HttpServer JWKS = startJwks();
+
     static {
         for (String service : SERVICES) {
             UPSTREAMS.put(service, startUpstream(service));
@@ -55,11 +60,13 @@ class GatewayRoutingTests {
             int port = UPSTREAMS.get(service).getAddress().getPort();
             registry.add(service.toUpperCase() + "_SERVICE_URL", () -> "http://127.0.0.1:" + port);
         }
+        registry.add("gateway.jwks-uri", () -> "http://127.0.0.1:" + JWKS.getAddress().getPort() + "/jwks");
     }
 
     @AfterAll
     static void stopUpstreams() {
         UPSTREAMS.values().forEach(server -> server.stop(0));
+        JWKS.stop(0);
     }
 
     @Autowired
@@ -125,6 +132,61 @@ class GatewayRoutingTests {
     }
 
     @Test
+    void validTokensPassThroughToTheService() throws Exception {
+        mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + TestTokens.student(UUID.randomUUID())))
+                .andExpect(status().isOk());
+        assertThat(RECEIVED).singleElement().asString().startsWith("identity /api/users/me ");
+    }
+
+    @Test
+    void forgedOrExpiredTokensStopAtTheGateway() throws Exception {
+        String token = TestTokens.student(UUID.randomUUID());
+        String expired = TestTokens.builder().issuedAt(java.time.Instant.now().minusSeconds(3600)).build();
+        for (String bad : List.of(token.substring(0, token.length() - 3) + "xyz", expired, "not-a-jwt")) {
+            mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + bad))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+        }
+        assertThat(RECEIVED).isEmpty();
+    }
+
+    @Test
+    void signInIsRateLimitedPerAddress() throws Exception {
+        for (int i = 0; i < 20; i++) {
+            mvc.perform(get("/api/auth/google/start").with(from("10.0.0.21"))).andExpect(status().isOk());
+        }
+        mvc.perform(get("/api/auth/google/start").with(from("10.0.0.21")))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().exists("Retry-After"))
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+        // Another address has its own allowance.
+        mvc.perform(get("/api/auth/google/start").with(from("10.0.0.22"))).andExpect(status().isOk());
+    }
+
+    @Test
+    void checkoutIsRateLimitedPerUserNotPerAddress() throws Exception {
+        String alice = TestTokens.student(UUID.randomUUID());
+        for (int i = 0; i < 5; i++) {
+            mvc.perform(post("/api/subscriptions/checkout").header("Authorization", "Bearer " + alice).with(from("10.0.0.31")))
+                    .andExpect(status().isOk());
+        }
+        mvc.perform(post("/api/subscriptions/checkout").header("Authorization", "Bearer " + alice).with(from("10.0.0.32")))
+                .andExpect(status().isTooManyRequests());
+        String bob = TestTokens.student(UUID.randomUUID());
+        mvc.perform(post("/api/subscriptions/checkout").header("Authorization", "Bearer " + bob).with(from("10.0.0.31")))
+                .andExpect(status().isOk());
+        // Reading plans is not limited.
+        mvc.perform(get("/api/subscriptions/me").header("Authorization", "Bearer " + alice)).andExpect(status().isOk());
+    }
+
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor from(String address) {
+        return request -> {
+            request.setRemoteAddr(address);
+            return request;
+        };
+    }
+
+    @Test
     void healthIsUp() throws Exception {
         mvc.perform(get("/actuator/health/readiness"))
                 .andExpect(status().isOk())
@@ -133,6 +195,24 @@ class GatewayRoutingTests {
 
     private static String tail(String text, int max) {
         return text.length() <= max ? text : text.substring(text.length() - max);
+    }
+
+    private static HttpServer startJwks() {
+        try {
+            HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            byte[] body = TestTokens.jwksJson().getBytes(StandardCharsets.UTF_8);
+            server.createContext("/jwks", exchange -> {
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, body.length);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(body);
+                }
+            });
+            server.start();
+            return server;
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static HttpServer startUpstream(String name) {
