@@ -72,7 +72,9 @@ public final class ImportFile {
             }
             Map<String, String> byColumn = new LinkedHashMap<>();
             for (int c = 0; c < header.size() && c < cells.size(); c++) {
-                byColumn.put(header.get(c), cells.get(c));
+                if (!header.get(c).isEmpty()) { // spreadsheets often carry empty columns after the last one
+                    byColumn.put(header.get(c), cells.get(c));
+                }
             }
             rows.add(new Row(r + 1, byColumn));
         }
