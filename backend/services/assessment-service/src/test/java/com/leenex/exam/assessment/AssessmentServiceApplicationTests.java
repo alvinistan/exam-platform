@@ -7,6 +7,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.leenex.exam.platform.security.TestTokens;
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -14,6 +21,8 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -28,6 +37,20 @@ class AssessmentServiceApplicationTests {
     @Container
     @ServiceConnection
     static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:16-alpine");
+
+    /** Stands in for identity-service's JWKS endpoint, publishing the test signing key. */
+    static final HttpServer JWKS = startJwks();
+
+    @DynamicPropertySource
+    static void jwks(DynamicPropertyRegistry registry) {
+        registry.add("platform.security.jwks-uri",
+                () -> "http://127.0.0.1:" + JWKS.getAddress().getPort() + "/.well-known/jwks.json");
+    }
+
+    @AfterAll
+    static void stopJwks() {
+        JWKS.stop(0);
+    }
 
     @Autowired
     MockMvc mvc;
@@ -69,8 +92,32 @@ class AssessmentServiceApplicationTests {
     }
 
     @Test
+    void validAccessTokenIsAcceptedUsingIdentityKeys() throws Exception {
+        // Past security (keys fetched from the JWKS endpoint), the unknown path is a plain 404.
+        mvc.perform(get("/api/anything").header("Authorization", "Bearer " + TestTokens.student(UUID.randomUUID())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
+    @Test
+    void forgedTokenIsRejected() throws Exception {
+        String token = TestTokens.student(UUID.randomUUID());
+        mvc.perform(get("/api/anything").header("Authorization", "Bearer " + token.substring(0, token.length() - 3) + "abc"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void studentsCannotReachAdminEndpoints() throws Exception {
+        mvc.perform(get("/api/admin/anything").header("Authorization", "Bearer " + TestTokens.student(UUID.randomUUID())))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
     void internalEndpointsAreDeniedByDefault() throws Exception {
         mvc.perform(get("/internal/events")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/internal/events").header("Authorization", "Bearer " + TestTokens.admin(UUID.randomUUID())))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -78,5 +125,22 @@ class AssessmentServiceApplicationTests {
         mvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.openapi").exists());
+    }
+
+    private static HttpServer startJwks() {
+        try {
+            HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            byte[] body = TestTokens.jwksJson().getBytes(StandardCharsets.UTF_8);
+            server.createContext("/.well-known/jwks.json", exchange -> {
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseBody().write(body);
+                exchange.close();
+            });
+            server.start();
+            return server;
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

@@ -28,6 +28,17 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+# Phase 5: Google sign-in and platform tokens (ADR-004). Secrets only from the environment.
+identity:
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:8088}
+  admin-bootstrap-email: ${ADMIN_BOOTSTRAP_EMAIL:}
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+  jwt:
+    signing-keys: ${IDENTITY_JWT_SIGNING_KEYS:}
+    require-configured-key: ${IDENTITY_REQUIRE_SIGNING_KEY:false}
+
 management:
   endpoints:
     web:

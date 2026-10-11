@@ -51,7 +51,7 @@ On Windows PowerShell use `Copy-Item .env.example .env` for the first line.
 | --- | --- |
 | http://localhost:8088 | Web app (served by Caddy, proxies `/api` to the gateway) |
 | http://localhost:8080/actuator/health | Gateway health |
-| localhost:5432 | PostgreSQL (bound to this machine only) |
+| (not published) | PostgreSQL. To connect a database tool, add `-f infra/compose/docker-compose.db-port.yml` (port 15432) |
 
 The first build downloads Maven and npm dependencies and takes several minutes; later builds use the cache.
 To reset all data: `docker compose -f infra/compose/docker-compose.yml down -v`.
@@ -77,17 +77,45 @@ cd contracts/openapi && npx @redocly/cli@2.62.1 lint
 PGHOST=localhost PGUSER=postgres PGPASSWORD=... backend/db-tests/run.sh
 ```
 
+## Sign-in (Phase 5)
+
+Sign-in is Google only. Create a **Web application** OAuth client in Google Cloud Console (Google Auth Platform →
+Clients) with these authorized redirect URIs, then put the client ID and secret in `.env`:
+
+- `http://localhost:8088/api/auth/google/callback` (Docker Compose stack)
+- `http://localhost:5173/api/auth/google/callback` (`npm run dev`; also set `PUBLIC_BASE_URL=http://localhost:5173`)
+
+`ADMIN_BOOTSTRAP_EMAIL` makes that Google account the first administrator on its first sign-in; it only ever
+happens once. Further administrators are added from **Administration → Users**.
+
+How it works (ADR-004): identity-service runs the Google flow with PKCE, nonce and a browser-bound state, then
+issues its own 15-minute ES256 access token (kept in memory by the web app) and a 30-day rotating refresh token in a
+`__Host-rt` HttpOnly cookie. Every service verifies access tokens against `/.well-known/jwks.json`.
+
+### Signing keys
+
+Locally, identity-service generates a temporary signing key at startup (tokens stop working after a restart; the
+web app just refreshes). Staging and production must set a persistent key and `IDENTITY_REQUIRE_SIGNING_KEY=true`:
+
+```bash
+docker compose -f infra/compose/docker-compose.yml --env-file .env run --rm --no-deps identity-service --generate-signing-key
+```
+
+Store the printed JSON as `IDENTITY_JWT_SIGNING_KEYS` in the secret store. To rotate: put the new key first and keep
+the old one in the set for at least 15 minutes, then remove it.
+
 ## Conventions
 
 - **Errors** are RFC 9457 problem responses with a stable `code` (see `contracts/openapi/common.yaml`).
 - **Correlation IDs**: every response carries `X-Correlation-Id`; it appears in every log line.
-- **Security baseline**: every service denies all API calls by default until token validation lands (Phase 5);
-  only health probes and the OpenAPI document are public. `/internal/**` is never routed by the gateway.
+- **Security**: every service validates the access token itself and denies by default; each service opens only
+  its own public endpoints. `/api/admin/**` needs the ADMIN role, `/internal/**` a service token (never routed by
+  the gateway). The gateway also rejects invalid tokens early and rate-limits sign-in, checkout and attempt starts.
 - **Data ownership**: one database and one login per service; no cross-service foreign keys or queries (ADR-003).
 - **Secrets** live only in `.env` (git-ignored) or AWS Secrets Manager, never in the repository.
 - **Branches**: each phase is developed on its own branch and merged through a pull request after CI passes.
 
 ## Status
 
-Phases 0–3 (assessment, requirements, UI/UX design, architecture) are complete. Phase 4 delivers this foundation.
-Feature work starts in Phase 5 (Google sign-in and roles). See `CHANGELOG.md`.
+Phases 0–4 are complete. Phase 5 adds Google sign-in, roles, account management and user administration.
+See `CHANGELOG.md`.

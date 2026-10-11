@@ -1,5 +1,8 @@
+import { Suspense } from 'react';
 import { Outlet } from 'react-router';
+import { AccountMenu } from './AccountMenu';
 import { Brand } from './Brand';
+import { PageLoading } from './PageLoading';
 
 export function PublicLayout() {
   return (
@@ -13,10 +16,13 @@ export function PublicLayout() {
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex min-h-[68px] max-w-[1200px] items-center justify-between gap-4 px-4 sm:px-8">
           <Brand />
+          <AccountMenu />
         </div>
       </header>
       <main id="main" tabIndex={-1} className="flex-1 focus:shadow-none">
-        <Outlet />
+        <Suspense fallback={<PageLoading />}>
+          <Outlet />
+        </Suspense>
       </main>
       <footer className="border-t border-border bg-surface">
         <div className="mx-auto max-w-[1200px] px-4 py-6 text-sm text-muted sm:px-8">

@@ -39,6 +39,10 @@ jobs:
         if: failure()
         working-directory: .
         run: python3 .github/scripts/annotate_failures.py "$RUNNER_TEMP/maven.log" backend
+      - name: Summarise test counts
+        if: always()
+        working-directory: .
+        run: python3 .github/scripts/test_summary.py backend
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

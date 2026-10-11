@@ -36,6 +36,29 @@ spring:
               predicates:
                 - Path=/api/access/**,/api/plans/**,/api/subscriptions/**,/api/payments/**,/api/admin/billing/**
 
+gateway:
+  # identity-service's public keys; requests with an invalid token stop here (ADR-004).
+  jwks-uri: ${IDENTITY_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
+  # In-memory token buckets (ADR-015). capacity = burst; refill-per-minute = steady rate.
+  rate-limits:
+    - name: sign-in
+      paths: [/api/auth/**]
+      key: IP
+      capacity: 20
+      refill-per-minute: 20
+    - name: checkout
+      paths: [/api/subscriptions/checkout]
+      methods: [POST]
+      key: USER
+      capacity: 5
+      refill-per-minute: 5
+    - name: attempt-start
+      paths: [/api/attempts]
+      methods: [POST]
+      key: USER
+      capacity: 20
+      refill-per-minute: 20
+
 management:
   endpoints:
     web:

@@ -31,7 +31,10 @@ def main() -> None:
                 node = case.find(kind)
                 if node is None or emitted >= MAX_ANNOTATIONS:
                     continue
-                trace = '\n'.join((node.text or '').strip().splitlines()[:40])
+                lines = (node.text or '').strip().splitlines()
+                # The top of the trace plus every "Caused by" (the root cause of a context failure is at the end).
+                causes = [l for i, l in enumerate(lines) if l.startswith('Caused by:')]
+                trace = '\n'.join(lines[:12] + ['...'] + causes)
                 emit(f"{case.get('classname')}.{case.get('name')} ({kind})",
                      f"{node.get('type')}: {node.get('message')}\n\n{trace}")
                 emitted += 1
