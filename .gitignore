@@ -24,3 +24,6 @@ coverage/
 !.vscode/extensions.json
 .DS_Store
 Thumbs.db
+
+# Local service data (question images when a service runs outside Docker)
+backend/services/*/data/

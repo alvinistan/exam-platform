@@ -441,17 +441,19 @@ paths:
     get:
       tags: [Admin questions]
       operationId: searchQuestions
-      summary: Search the question bank
+      summary: Search the question bank (FR-QB-07)
       parameters:
         - $ref: './common.yaml#/components/parameters/Page'
         - $ref: './common.yaml#/components/parameters/Size'
-        - { name: q, in: query, schema: { type: string, maxLength: 200 } }
-        - { name: bank, in: query, schema: { type: string, enum: [TRIAL, MAIN] } }
-        - { name: topicId, in: query, schema: { type: string, format: uuid } }
-        - { name: examId, in: query, schema: { type: string, format: uuid } }
-        - { name: status, in: query, schema: { type: string, enum: [DRAFT, REVIEWED, PUBLISHED, ARCHIVED] } }
-        - { name: difficulty, in: query, schema: { $ref: './common.yaml#/components/schemas/Difficulty' } }
+        - { name: q, in: query, description: Text in the question, schema: { type: string, maxLength: 200 } }
         - { name: tag, in: query, schema: { type: string } }
+        - { name: bank, in: query, schema: { $ref: '#/components/schemas/Bank' } }
+        - { name: examId, in: query, description: Questions in topics of the exam's linked subjects, schema: { type: string, format: uuid } }
+        - { name: subjectId, in: query, schema: { type: string, format: uuid } }
+        - { name: moduleId, in: query, schema: { type: string, format: uuid } }
+        - { name: topicId, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/QuestionStatus' } }
+        - { name: difficulty, in: query, schema: { $ref: './common.yaml#/components/schemas/Difficulty' } }
         - { name: sort, in: query, schema: { type: string, enum: [updatedAt, -updatedAt, difficulty], default: -updatedAt } }
       responses:
         '200':
@@ -464,31 +466,33 @@ paths:
                 properties:
                   items: { type: array, items: { $ref: '#/components/schemas/QuestionSummary' } }
                   page: { $ref: './common.yaml#/components/schemas/PageMeta' }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
     post:
       tags: [Admin questions]
       operationId: createQuestion
       summary: Create a draft question
+      description: Drafts may be incomplete; `validation` lists what blocks review (FR-QB-04). HTML is sanitised with an allow-list.
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/QuestionInput' }
       responses:
-        '201': { description: Created as DRAFT., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionAdmin' } } } }
+        '201': { description: Created as DRAFT (version 1)., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionAdmin' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/catalog/questions/{questionId}:
     parameters:
-      - { name: questionId, in: path, required: true, schema: { type: string, format: uuid } }
+      - $ref: '#/components/parameters/QuestionId'
     get:
       tags: [Admin questions]
       operationId: getQuestion
-      summary: Get a question with its current version
+      summary: Get a question's current version, history and validation
       responses:
-        '200': { description: Question., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionAdmin' } } } }
+        '200': { description: Question; the ETag carries the version for If-Match., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionAdmin' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
@@ -496,9 +500,12 @@ paths:
       tags: [Admin questions]
       operationId: saveQuestion
       summary: Save edits
-      description: Edits the draft version in place; if the current version is frozen (published), a new draft version is created.
+      description: >-
+        Edits the current version in place while it is unpublished. If it is published (frozen), a new version is
+        created and the published one keeps being served until the change is published (FR-QB-05). A Reviewed question
+        goes back to Draft. The bank can't change here (use bulk CHANGE_BANK).
       parameters:
-        - { name: If-Match, in: header, required: true, description: Version for optimistic locking., schema: { type: string } }
+        - $ref: '#/components/parameters/IfMatch'
       requestBody:
         required: true
         content:
@@ -509,15 +516,20 @@ paths:
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
         '409': { $ref: './common.yaml#/components/responses/Conflict' }
   /api/admin/catalog/questions/{questionId}/transitions:
     post:
       tags: [Admin questions]
       operationId: transitionQuestion
-      summary: Move a question through its workflow
-      description: DRAFT→REVIEWED requires FR-QB-04 validation; REVIEWED→PUBLISHED freezes the version.
+      summary: Move a question through its workflow (FR-QB-03)
+      description: >-
+        DRAFT→REVIEWED and →PUBLISHED need FR-QB-04 to hold (400 VALIDATION_FAILED with `problems`). REVIEWED→PUBLISHED
+        freezes the version; PUBLISHED→PUBLISHED publishes pending edits. REVIEWED→DRAFT and ARCHIVED→DRAFT send it back;
+        any status→ARCHIVED retires it. Leaving PUBLISHED is refused with PUBLISH_BLOCKED if a published exam would no
+        longer have enough questions.
       parameters:
-        - { name: questionId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/QuestionId'
       requestBody:
         required: true
         content:
@@ -526,19 +538,112 @@ paths:
               type: object
               required: [to]
               properties:
-                to: { type: string, enum: [REVIEWED, PUBLISHED, ARCHIVED, DRAFT] }
+                to: { $ref: '#/components/schemas/QuestionStatus' }
       responses:
         '200': { description: Moved., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionAdmin' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
         '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/questions/{questionId}/discard-draft:
+    post:
+      tags: [Admin questions]
+      operationId: discardQuestionDraft
+      summary: Throw away unpublished edits to a published question
+      parameters:
+        - $ref: '#/components/parameters/QuestionId'
+      responses:
+        '200': { description: Back to the published version., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionAdmin' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/questions/bulk:
+    post:
+      tags: [Admin questions]
+      operationId: bulkQuestions
+      summary: Apply one action to many questions (FR-QB-09)
+      description: >-
+        All or nothing: if any question can't take the action, nothing changes and `errors` lists each one (field = the
+        question ID). CHANGE_BANK copies each question into the other bank and archives the original (ADR-009).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [questionIds, action]
+              properties:
+                questionIds: { type: array, minItems: 1, maxItems: 200, items: { type: string, format: uuid } }
+                action: { type: string, enum: [SET_STATUS, MOVE_TOPIC, CHANGE_BANK] }
+                status: { $ref: '#/components/schemas/QuestionStatus' }
+                topicId: { type: string, format: uuid }
+                bank: { $ref: '#/components/schemas/Bank' }
+      responses:
+        '200':
+          description: Applied.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updated, createdIds]
+                properties:
+                  updated: { type: integer }
+                  createdIds: { type: array, description: Copies made by CHANGE_BANK., items: { type: string, format: uuid } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/misconceptions:
+    get:
+      tags: [Admin questions]
+      operationId: listMisconceptions
+      summary: Misconception categories (FR-QB-11)
+      parameters:
+        - { name: topicId, in: query, description: The topic's own plus those not tied to a topic, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Misconceptions by title., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Misconception' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+    post:
+      tags: [Admin questions]
+      operationId: createMisconception
+      summary: Create a misconception category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MisconceptionInput' }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/Misconception' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/catalog/misconceptions/{misconceptionId}:
+    put:
+      tags: [Admin questions]
+      operationId: updateMisconception
+      summary: Update a misconception category
+      parameters:
+        - { name: misconceptionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MisconceptionInput' }
+      responses:
+        '200': { description: Updated., content: { application/json: { schema: { $ref: '#/components/schemas/Misconception' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
   /api/admin/catalog/question-imports:
     post:
       tags: [Admin questions]
       operationId: uploadQuestionImport
-      summary: Upload a CSV or XLSX import for validation
-      description: Nothing is saved yet. Returns a per-row report; confirm to create the valid rows as drafts.
+      summary: Upload a CSV or XLSX import for validation (FR-QB-08)
+      description: Nothing is saved to a bank yet. Returns a per-row report; confirm within 24 hours to create the valid rows as drafts.
       requestBody:
         required: true
         content:
@@ -547,36 +652,64 @@ paths:
               type: object
               required: [file, examId]
               properties:
-                file: { type: string, format: binary, description: 'Max 5 MB; .csv or .xlsx from the approved template' }
-                examId: { type: string, format: uuid }
-                bank: { type: string, enum: [TRIAL, MAIN], default: MAIN }
+                file: { type: string, format: binary, description: 'Max 5 MB and 2,000 rows; .csv (UTF-8) or .xlsx from the template' }
+                examId: { type: string, format: uuid, description: Rows name topics among this exam's linked subjects }
+                bank: { $ref: '#/components/schemas/Bank' }
       responses:
-        '201':
-          description: Validation report.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ImportReport' }
+        '201': { description: Validation report., content: { application/json: { schema: { $ref: '#/components/schemas/ImportReport' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/catalog/question-imports/template:
+    get:
+      tags: [Admin questions]
+      operationId: questionImportTemplate
+      summary: Download the import template (header row plus one example)
+      parameters:
+        - { name: format, in: query, schema: { type: string, enum: [csv, xlsx], default: csv } }
+      responses:
+        '200':
+          description: Template file (attachment).
+          content:
+            text/csv: { schema: { type: string } }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: { schema: { type: string, format: binary } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/catalog/question-imports/{importId}:
+    get:
+      tags: [Admin questions]
+      operationId: getQuestionImport
+      summary: An import's report
+      parameters:
+        - { name: importId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Report., content: { application/json: { schema: { $ref: '#/components/schemas/ImportReport' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
   /api/admin/catalog/question-imports/{importId}/confirm:
     post:
       tags: [Admin questions]
       operationId: confirmQuestionImport
       summary: Create the valid rows as draft questions
+      description: One transaction. Refused if already confirmed, expired, or there are no valid rows.
       parameters:
         - { name: importId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
         '200': { description: Rows created., content: { application/json: { schema: { $ref: '#/components/schemas/ImportReport' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
         '409': { $ref: './common.yaml#/components/responses/Conflict' }
   /api/admin/catalog/media:
     post:
       tags: [Admin questions]
       operationId: uploadMedia
       summary: Upload a question image
-      description: PNG, JPEG or WebP up to 2 MB. Content is sniffed (magic bytes), re-encoded and stripped of metadata before storage.
+      description: >-
+        PNG, JPEG or WebP up to 2 MB and 4096 × 4096 pixels. The type is read from the bytes; the image is decoded and
+        re-encoded (PNG, or JPEG for photos) so no metadata or hidden content is stored.
       requestBody:
         required: true
         content:
@@ -593,12 +726,34 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [key]
+                required: [key, contentType, width, height, url]
                 properties:
-                  key: { type: string }
+                  key: { type: string, description: Reference this from questions and options. }
+                  contentType: { type: string, enum: [image/png, image/jpeg] }
+                  width: { type: integer }
+                  height: { type: integer }
+                  url: { type: string, description: Short-lived signed link for previewing. }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/media/{key}:
+    get:
+      tags: [Catalogue]
+      operationId: getMedia
+      summary: A question image, through a signed link
+      description: No sign-in; the signature is the permission (ADR-012). Links last about 10–20 minutes. Any invalid, forged or expired link is 404.
+      security: [{}]
+      parameters:
+        - { name: key, in: path, required: true, schema: { type: string, pattern: '^[a-f0-9]{32}\.(png|jpg)$' } }
+        - { name: expires, in: query, required: true, schema: { type: integer } }
+        - { name: sig, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The image.
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
 
   /internal/question-selection:
     post:
@@ -677,6 +832,11 @@ components:
       schema: { type: string, format: uuid }
     CategoryId:
       name: categoryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    QuestionId:
+      name: questionId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -940,70 +1100,158 @@ components:
         maxRetakes: { type: [integer, 'null'] }
         version: { type: integer }
         saved: { type: boolean, description: False while the mode has never been saved (values are suggested defaults). }
+    Bank:
+      type: string
+      enum: [TRIAL, MAIN]
+    QuestionStatus:
+      type: string
+      enum: [DRAFT, REVIEWED, PUBLISHED, ARCHIVED]
     OptionInput:
       type: object
-      required: [label, bodyHtml, isCorrect]
+      required: [isCorrect]
+      description: Options are labelled A, B, C … in the order sent.
       properties:
-        label: { type: string, enum: [A, B, C, D, E] }
         bodyHtml: { type: string, maxLength: 4000 }
         mediaKey: { type: string }
-        mediaAlt: { type: string, maxLength: 250 }
+        mediaAlt: { type: string, maxLength: 250, description: Required with mediaKey. }
         isCorrect: { type: boolean }
-        misconceptionId: { type: [string, 'null'], format: uuid }
+        misconceptionId: { type: [string, 'null'], format: uuid, description: Wrong options only. }
     QuestionInput:
       type: object
-      required: [topicId, bank, answerType, stemHtml, options, difficulty, estSeconds]
+      required: [topicId, answerType, options, difficulty, estSeconds]
       properties:
         topicId: { type: string, format: uuid }
-        bank: { type: string, enum: [TRIAL, MAIN] }
+        bank: { $ref: '#/components/schemas/Bank', description: Required on create; must match on save. }
         answerType: { type: string, enum: [SINGLE, MULTI] }
-        stemHtml: { type: string, maxLength: 20000, description: Sanitised server-side with an allow-list. }
+        stemHtml: { type: string, maxLength: 20000, description: Sanitised server-side with an allow-list. Text or an image is required. }
         stemMediaKey: { type: string }
         stemMediaAlt: { type: string, maxLength: 250 }
-        options: { type: array, minItems: 4, maxItems: 5, items: { $ref: '#/components/schemas/OptionInput' } }
+        options: { type: array, maxItems: 5, items: { $ref: '#/components/schemas/OptionInput' }, description: Drafts may have fewer than 4. }
         explanationHtml: { type: string, maxLength: 20000 }
         definitions:
           type: array
-          items: { type: object, required: [term, meaning], properties: { term: { type: string }, meaning: { type: string } } }
+          maxItems: 20
+          items: { type: object, required: [term, meaning], properties: { term: { type: string, maxLength: 120 }, meaning: { type: string, maxLength: 1000 } } }
         keyPoints: { type: array, maxItems: 10, items: { type: string, maxLength: 300 } }
         difficulty: { $ref: './common.yaml#/components/schemas/Difficulty' }
         estSeconds: { type: integer, minimum: 10, maximum: 600 }
-        marks: { type: number, exclusiveMinimum: 0, default: 1 }
-        tags: { type: array, items: { type: string } }
+        marks: { type: number, exclusiveMinimum: 0, maximum: 100, default: 1 }
+        tags: { type: array, maxItems: 20, items: { type: string }, description: 'Lower-cased; letters, digits, spaces and hyphens.' }
     QuestionSummary:
       type: object
-      required: [id, bank, status, topicId, difficulty, stemText, updatedAt]
+      required: [id, bank, status, topicId, topicTitle, moduleTitle, subjectTitle, difficulty, answerType, stemText, versionNo, hasDraftChanges, tags, updatedAt, updatedBy]
       properties:
         id: { type: string, format: uuid }
-        bank: { type: string, enum: [TRIAL, MAIN] }
-        status: { type: string, enum: [DRAFT, REVIEWED, PUBLISHED, ARCHIVED] }
+        bank: { $ref: '#/components/schemas/Bank' }
+        status: { $ref: '#/components/schemas/QuestionStatus' }
         topicId: { type: string, format: uuid }
+        topicTitle: { type: string }
+        moduleTitle: { type: string }
+        subjectTitle: { type: string }
         difficulty: { $ref: './common.yaml#/components/schemas/Difficulty' }
-        stemText: { type: string }
+        answerType: { type: string, enum: [SINGLE, MULTI] }
+        stemText: { type: string, description: 'Plain text, first 240 characters.' }
+        versionNo: { type: integer }
+        hasDraftChanges: { type: boolean, description: A published question with unpublished edits. }
+        tags: { type: array, items: { type: string } }
         updatedAt: { type: string, format: date-time }
+        updatedBy: { type: string, format: uuid }
     QuestionAdmin:
-      allOf:
-        - $ref: '#/components/schemas/QuestionInput'
-        - type: object
-          required: [id, status, versionNo, version, validation]
+      type: object
+      required: [id, bank, status, topicId, topic, answerType, stemHtml, options, explanationHtml, definitions, keyPoints, difficulty, estSeconds, marks, tags, versionNo, hasDraftChanges, version, validation, createdAt, createdBy, updatedAt, updatedBy, history]
+      properties:
+        id: { type: string, format: uuid }
+        bank: { $ref: '#/components/schemas/Bank' }
+        status: { $ref: '#/components/schemas/QuestionStatus' }
+        topicId: { type: string, format: uuid }
+        topic:
+          type: object
+          required: [subjectId, subjectTitle, moduleId, moduleTitle, topicTitle, active]
           properties:
-            id: { type: string, format: uuid }
-            status: { type: string, enum: [DRAFT, REVIEWED, PUBLISHED, ARCHIVED] }
-            versionNo: { type: integer }
-            version: { type: integer }
-            validation:
-              type: object
-              required: [valid, problems]
-              properties:
-                valid: { type: boolean }
-                problems: { type: array, items: { type: string } }
+            subjectId: { type: string, format: uuid }
+            subjectTitle: { type: string }
+            moduleId: { type: string, format: uuid }
+            moduleTitle: { type: string }
+            topicTitle: { type: string }
+            active: { type: boolean }
+        answerType: { type: string, enum: [SINGLE, MULTI] }
+        stemHtml: { type: string }
+        stemMediaKey: { type: [string, 'null'] }
+        stemMediaUrl: { type: [string, 'null'], description: Short-lived signed link. }
+        stemMediaAlt: { type: [string, 'null'] }
+        options:
+          type: array
+          items:
+            type: object
+            required: [label, bodyHtml, isCorrect]
+            properties:
+              label: { type: string, enum: [A, B, C, D, E] }
+              bodyHtml: { type: string }
+              mediaKey: { type: [string, 'null'] }
+              mediaUrl: { type: [string, 'null'] }
+              mediaAlt: { type: [string, 'null'] }
+              isCorrect: { type: boolean }
+              misconceptionId: { type: [string, 'null'], format: uuid }
+        explanationHtml: { type: string }
+        definitions: { type: array, items: { type: object, properties: { term: { type: string }, meaning: { type: string } } } }
+        keyPoints: { type: array, items: { type: string } }
+        difficulty: { $ref: './common.yaml#/components/schemas/Difficulty' }
+        estSeconds: { type: integer }
+        marks: { type: number }
+        tags: { type: array, items: { type: string } }
+        versionNo: { type: integer, description: The version being edited. }
+        publishedVersionNo: { type: [integer, 'null'], description: The version students are served. }
+        hasDraftChanges: { type: boolean }
+        version: { type: integer, description: Optimistic-lock version for If-Match. }
+        validation:
+          type: object
+          required: [valid, problems]
+          properties:
+            valid: { type: boolean }
+            problems: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: string, format: uuid }
+        updatedAt: { type: string, format: date-time }
+        updatedBy: { type: string, format: uuid }
+        history:
+          type: array
+          items:
+            type: object
+            required: [versionNo, published, createdAt, createdBy]
+            properties:
+              versionNo: { type: integer }
+              published: { type: boolean }
+              publishedAt: { type: [string, 'null'], format: date-time }
+              createdBy: { type: string, format: uuid }
+              createdAt: { type: string, format: date-time }
+    Misconception:
+      type: object
+      required: [id, title, description, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        topicId: { type: [string, 'null'], format: uuid }
+        title: { type: string }
+        description: { type: string }
+        createdAt: { type: string, format: date-time }
+    MisconceptionInput:
+      type: object
+      required: [title, description]
+      properties:
+        topicId: { type: [string, 'null'], format: uuid }
+        title: { type: string, minLength: 2, maxLength: 160 }
+        description: { type: string, maxLength: 1000 }
     ImportReport:
       type: object
-      required: [importId, totalRows, validRows, errors]
+      required: [importId, examId, bank, fileName, totalRows, validRows, errors, status, expiresAt, createdQuestionIds]
       properties:
         importId: { type: string, format: uuid }
+        examId: { type: string, format: uuid }
+        bank: { $ref: '#/components/schemas/Bank' }
+        fileName: { type: string }
         totalRows: { type: integer }
         validRows: { type: integer }
+        status: { type: string, enum: [PENDING, CONFIRMED] }
+        expiresAt: { type: string, format: date-time }
         createdQuestionIds: { type: array, items: { type: string, format: uuid } }
         errors:
           type: array
@@ -1011,7 +1259,7 @@ components:
             type: object
             required: [row, column, message]
             properties:
-              row: { type: integer }
+              row: { type: integer, description: Spreadsheet row number (the header is row 1). }
               column: { type: string }
               message: { type: string }
     SelectionRequest:

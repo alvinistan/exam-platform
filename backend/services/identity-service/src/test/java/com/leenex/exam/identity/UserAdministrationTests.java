@@ -39,6 +39,20 @@ class UserAdministrationTests extends IdentityTestSupport {
     }
 
     @Test
+    void adminsCanLookUpDisplayNamesById() throws Exception {
+        Session admin = signInAdmin();
+        Session other = signIn("g-name-lookup", "name.lookup@example.com");
+        mvc.perform(withBearer(get("/api/admin/users/names").param("ids", other.userId() + "," + admin.userId()),
+                        admin.accessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[?(@.id == '" + other.userId() + "')].displayName").value("Test g-name-lookup"))
+                .andExpect(jsonPath("$[0].email").doesNotExist());
+        mvc.perform(withBearer(get("/api/admin/users/names").param("ids", other.userId().toString()), other.accessToken()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void adminsCanListAndSearchUsers() throws Exception {
         Session admin = signInAdmin();
         signIn("g-search-target", "findable.person@example.com");

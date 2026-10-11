@@ -45,6 +45,7 @@ class GatewayRoutingTests {
     private static final List<String> SERVICES = List.of("identity", "catalog", "assessment", "learning", "subscription");
     private static final Map<String, HttpServer> UPSTREAMS = new ConcurrentHashMap<>();
     private static final List<String> RECEIVED = new CopyOnWriteArrayList<>();
+    private static final List<String> BODIES = new CopyOnWriteArrayList<>();
 
     private static final HttpServer JWKS = startJwks();
 
@@ -75,6 +76,18 @@ class GatewayRoutingTests {
     @BeforeEach
     void clear() {
         RECEIVED.clear();
+        BODIES.clear();
+    }
+
+    @Test
+    void uploadsReachTheServiceUntouched() throws Exception {
+        byte[] body = new byte[3 * 1024 * 1024 + 17];
+        java.util.Arrays.fill(body, (byte) 'x');
+        mvc.perform(post("/api/admin/catalog/media")
+                        .header("Authorization", "Bearer " + TestTokens.admin(UUID.randomUUID()))
+                        .contentType("multipart/form-data; boundary=leenex-boundary").content(body))
+                .andExpect(status().isOk());
+        assertThat(BODIES).containsExactly("multipart/form-data; boundary=leenex-boundary " + body.length);
     }
 
     @ParameterizedTest(name = "{0} -> {1}")
@@ -86,6 +99,7 @@ class GatewayRoutingTests {
         "/api/categories,                     catalog",
         "/api/exams/by-slug/ielts-academic,   catalog",
         "/api/admin/catalog/exams,            catalog",
+        "/api/media/0123456789abcdef0123456789abcdef.png, catalog",
         "/api/attempts/estimate,              assessment",
         "/api/admin/attempts,                 assessment",
         "/api/learning/topics,                learning",
@@ -221,6 +235,10 @@ class GatewayRoutingTests {
             server.createContext("/", exchange -> {
                 String path = exchange.getRequestURI().getPath();
                 RECEIVED.add(name + " " + path + " " + exchange.getRequestHeaders().getFirst("X-Correlation-Id"));
+                byte[] received = exchange.getRequestBody().readAllBytes();
+                if (received.length > 0) {
+                    BODIES.add(exchange.getRequestHeaders().getFirst("Content-Type") + " " + received.length);
+                }
                 byte[] body = (name + " " + path).getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().add("Content-Type", "text/plain");
                 exchange.sendResponseHeaders(200, body.length);

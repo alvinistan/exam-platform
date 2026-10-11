@@ -7,6 +7,10 @@ server:
 spring:
   application:
     name: gateway
+  servlet:
+    multipart:
+      # The gateway forwards uploads untouched; the owning service parses and limits them.
+      enabled: false
   threads:
     virtual:
       enabled: true
@@ -22,7 +26,7 @@ spring:
             - id: catalog
               uri: ${CATALOG_SERVICE_URL:http://localhost:8082}
               predicates:
-                - Path=/api/categories/**,/api/exams/**,/api/admin/catalog/**
+                - Path=/api/categories/**,/api/exams/**,/api/admin/catalog/**,/api/media/**
             - id: assessment
               uri: ${ASSESSMENT_SERVICE_URL:http://localhost:8083}
               predicates:

@@ -67,6 +67,10 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/catalog
       DB_USERNAME: catalog_svc
       DB_PASSWORD: ${CATALOG_DB_PASSWORD}
+      CATALOG_MEDIA_DIR: /data/media
+      CATALOG_MEDIA_SIGNING_KEY: ${CATALOG_MEDIA_SIGNING_KEY:-}
+    volumes:
+      - catalogmedia:/data/media
 
   assessment-service:
     <<: *service
@@ -134,3 +138,4 @@ services:
 
 volumes:
   pgdata:
+  catalogmedia:

@@ -222,6 +222,35 @@ paths:
           $ref: './common.yaml#/components/responses/Unauthorized'
         '403':
           $ref: './common.yaml#/components/responses/Forbidden'
+  /api/admin/users/names:
+    get:
+      tags: [Admin users]
+      operationId: userNames
+      summary: Display names for up to 100 user IDs
+      description: Lets admin screens of other services show who created or changed a record (FR-QB-12). Deleted users show as "Deleted user".
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          style: form
+          explode: false
+          schema: { type: array, minItems: 1, maxItems: 100, items: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Names of the users that exist.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, displayName]
+                  properties:
+                    id: { type: string, format: uuid }
+                    displayName: { type: string }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/users/{userId}/roles/{role}:
     parameters:
       - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
