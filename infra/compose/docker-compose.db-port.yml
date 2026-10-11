@@ -1,0 +1,6 @@
+# Optional: publish PostgreSQL to this computer for database tools (pgAdmin, DBeaver, psql).
+#   docker compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.db-port.yml --env-file .env up
+# DB_HOST_PORT defaults to 15432 because Windows often reserves 5432 (Hyper-V / WinNAT excluded port ranges).
+services:
+  postgres:
+    ports: ["127.0.0.1:${DB_HOST_PORT:-15432}:5432"]

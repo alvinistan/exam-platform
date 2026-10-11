@@ -35,8 +35,8 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
-    # Local only, bound to this machine so database tools can connect. Never exposed in staging or production.
-    ports: ["127.0.0.1:5432:5432"]
+    # Not published on the host: the services reach it inside Docker's network. To inspect it with a desktop
+    # database tool, add docker-compose.db-port.yml (see README). Never exposed in staging or production.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d billing"]
       interval: 5s

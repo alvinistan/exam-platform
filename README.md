@@ -51,7 +51,7 @@ On Windows PowerShell use `Copy-Item .env.example .env` for the first line.
 | --- | --- |
 | http://localhost:8088 | Web app (served by Caddy, proxies `/api` to the gateway) |
 | http://localhost:8080/actuator/health | Gateway health |
-| localhost:5432 | PostgreSQL (bound to this machine only) |
+| (not published) | PostgreSQL. To connect a database tool, add `-f infra/compose/docker-compose.db-port.yml` (port 15432) |
 
 The first build downloads Maven and npm dependencies and takes several minutes; later builds use the cache.
 To reset all data: `docker compose -f infra/compose/docker-compose.yml down -v`.
