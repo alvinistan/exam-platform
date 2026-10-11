@@ -1,5 +1,18 @@
 # Changelog
 
+## Phase 5 — Google sign-in and roles
+
+- identity-service: Google OpenID Connect with PKCE, nonce and browser-bound state; ES256 access tokens (15 min)
+  published through JWKS; rotating refresh tokens (30 days) with reuse detection and a 30-second multi-tab grace;
+  one-time admin bootstrap; profile with optimistic locking; account deletion (anonymised); admin user list, search,
+  grant/revoke admin, suspend/reactivate with reason; every change audited. Migration V2 (pending sign-ins).
+- platform-web: every service verifies tokens (signature, issuer, audience, expiry, active account), maps roles,
+  requires ADMIN for `/api/admin/**` and a service token for `/internal/**`; method security errors become 403s.
+- gateway: rejects invalid tokens early; in-memory rate limits on sign-in, checkout and attempt starts (ADR-015).
+- web: in-memory session with silent renewal, account menu, sign-in page, account page, administration Users page;
+  signed-in areas lazy-loaded.
+- `identity-service --generate-signing-key` prints a production signing key.
+
 ## Phase 4 — Development foundation
 
 - Maven multi-module backend on Spring Boot 4.1.1 / Spring Cloud 2025.1.3 / Java 21.
