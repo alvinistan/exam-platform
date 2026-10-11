@@ -32,7 +32,7 @@
         <springdoc.version>3.0.3</springdoc.version>
         <!-- Security overrides of versions managed by Spring Boot 4.1.1, from the CI image scan (Phase 4).
              Remove each one once a Spring Boot patch release manages an equal or newer version. -->
-        <tomcat.version>11.0.27</tomcat.version>               <!-- CVE-2026-65182, -65905, -68525 (CRITICAL) -->
+        <tomcat.version>11.0.25</tomcat.version>               <!-- CVE-2026-65182, -65905, -68525 (CRITICAL) -->
         <jackson-bom.version>3.1.7</jackson-bom.version>       <!-- CVE-2026-68497, -89407, -89425, -91776, -91777 -->
         <jackson-2-bom.version>2.21.7</jackson-2-bom.version>  <!-- same CVEs, Jackson 2 line used by springdoc -->
     </properties>
