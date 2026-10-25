@@ -5,8 +5,6 @@ import { Check, GraduationCap, TriangleAlert } from 'lucide-react';
 import { Alert, Badge, Button, Card, Dialog } from '@/components/ui';
 import { examKeys, modeLabels } from '@/features/exams/api';
 import { archiveExam, catalogKeys, publishExam, useAdminCategories, type AdminExamDetail } from '@/features/admin/catalog/api';
-import { describeReason } from '@/features/access/api';
-import { usePolicies } from '@/features/admin/access/api';
 import { ApiError } from '@/lib/api/problem';
 import { StepHeading } from './SetupShell';
 import { setupPath, setupStatus, stepForIssue } from './steps';
@@ -194,26 +192,15 @@ export function PublishStep({ exam }: { exam: AdminExamDetail }) {
   );
 }
 
-/** Free or Premium, from the access rules (subscription-service learns about a newly published exam within seconds). */
+/** Free attempts per exam type, as set in step 4. */
 function AccessLine({ exam }: { exam: AdminExamDetail }) {
-  const policies = usePolicies();
-  if (!policies.data) return null;
-  const row = policies.data.exams.find((e) => e.examId === exam.id);
-  const free = policies.data.policies.find((p) => p.ruleCode === 'FA1_CATALOGUE_POSITION');
+  const on = exam.modeSettings.filter((m) => m.enabled);
+  if (on.length === 0) return null;
   return (
     <p className="text-[14.5px] text-ink-2">
-      {row ? (
-        <>
-          <strong>Access: {row.access === 'FREE' ? 'Free' : 'Premium'}.</strong> {describeReason(row.reason)}.
-        </>
-      ) : exam.status === 'PUBLISHED' ? (
-        'Access is being worked out; refresh in a few seconds.'
-      ) : free?.active ? (
-        `Access is decided when it’s published: the first ${String((free.params as { count?: number }).count ?? 0)} exams in catalogue order are free.`
-      ) : (
-        'Access is decided when it’s published.'
-      )}{' '}
-      <Link to="/admin/access">Access rules</Link>
+      <strong>Free attempts per student:</strong>{' '}
+      {on.map((m) => `${modeLabels[m.mode]} ${m.freeAttempts}`).join(' · ')}. After that, Premium.{' '}
+      <Link to={setupPath(exam.id, 'modes')}>Change</Link>
     </p>
   );
 }

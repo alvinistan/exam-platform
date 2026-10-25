@@ -12,8 +12,24 @@ afterEach(() => {
 const FREE_ID = '0190d5e2-0000-7000-8000-000000000001';
 const PREMIUM_ID = '0190d5e2-0000-7000-8000-000000000002';
 
-const free = { access: 'FREE', reason: 'FA1_POSITION_1_OF_6', freeModes: ['PRACTICE'], welcomeAttemptsLeft: null };
-const locked = { access: 'LOCKED', reason: 'SUBSCRIPTION_REQUIRED', freeModes: [], welcomeAttemptsLeft: null };
+const mode = (m: string, access: string, freeAttempts: number, used: number | null = null) => ({
+  mode: m,
+  access,
+  freeAttempts,
+  used,
+  left: used === null ? null : Math.max(0, freeAttempts - used),
+});
+const visitorView = {
+  available: true,
+  premium: false,
+  modes: [mode('PRACTICE', 'FREE', 3), mode('MOCK', 'FREE', 1)],
+};
+const usedUp = {
+  available: true,
+  premium: false,
+  modes: [mode('PRACTICE', 'LOCKED', 3, 3), mode('MOCK', 'LOCKED', 1, 1)],
+};
+const premiumOnly = { available: true, premium: false, modes: [mode('PRACTICE', 'LOCKED', 0), mode('MOCK', 'LOCKED', 0)] };
 
 const catalogue = {
   'GET /api/categories': () => jsonResponse([categoryNursing]),
@@ -21,142 +37,100 @@ const catalogue = {
     jsonResponse(page([examSummary({ id: FREE_ID }), examSummary({ id: PREMIUM_ID, title: 'IELTS Academic', slug: 'ielts' })])),
 };
 
-describe('free and premium exams for students', () => {
-  it('marks each catalogue card Free or Premium', async () => {
+describe('free attempts for students', () => {
+  it('marks catalogue cards free to try or Premium', async () => {
     const asked: string[] = [];
     mockApi({
       ...catalogue,
       'GET /api/access/exams': ({ url }) => {
         asked.push(url.searchParams.get('examIds') ?? '');
-        return jsonResponse({ [FREE_ID]: free, [PREMIUM_ID]: locked });
+        return jsonResponse({ [FREE_ID]: visitorView, [PREMIUM_ID]: premiumOnly });
       },
     });
     renderRoute('/exams');
     const premiumCard = (await screen.findByRole('link', { name: 'IELTS Academic' })).closest('li') as HTMLElement;
     expect(await within(premiumCard).findByText('Premium')).toBeInTheDocument();
     const freeCard = screen.getByRole('link', { name: 'Nursing Licensure Review' }).closest('li') as HTMLElement;
-    expect(within(freeCard).getByText('Free')).toBeInTheDocument();
+    expect(within(freeCard).getByText('Free to try')).toBeInTheDocument();
     expect(asked[0]?.split(',').sort()).toEqual([FREE_ID, PREMIUM_ID]);
   });
 
-  it('shows a locked preview without any question content, and asks visitors to sign in', async () => {
+  it('shows visitors how many free attempts each exam type has and asks them to sign in to start', async () => {
     mockApi({
-      'GET /api/exams/by-slug/ielts': () => jsonResponse(examDetail({ id: PREMIUM_ID, title: 'IELTS Academic', slug: 'ielts' })),
-      'GET /api/access/exams': () => jsonResponse({ [PREMIUM_ID]: locked }),
+      'GET /api/exams/by-slug/nursing-licensure': () => jsonResponse(examDetail({ id: FREE_ID })),
+      'GET /api/access/exams': () => jsonResponse({ [FREE_ID]: visitorView }),
     });
-    renderRoute('/exams/ielts');
-    const preview = await screen.findByRole('region', { name: 'This exam needs Premium access' });
-    expect(within(preview).getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.getByText('Needs Premium access')).toBeInTheDocument();
+    renderRoute('/exams/nursing-licensure');
+    const practice = (await screen.findByRole('heading', { level: 3, name: 'Practice' })).closest('li') as HTMLElement;
+    expect(await within(practice).findByText('3 free attempts')).toBeInTheDocument();
+    expect(within(practice).getByRole('button', { name: 'Sign in to start' })).toBeInTheDocument();
+    const mock = screen.getByRole('heading', { level: 3, name: 'Mock exam' }).closest('li') as HTMLElement;
+    expect(within(mock).getByText('1 free attempt')).toBeInTheDocument();
   });
 
-  it('tells a signed-in student how to get access and marks premium-only modes on free exams', async () => {
+  it('counts down a signed-in student’s free attempts and locks a used-up exam type until Premium', async () => {
     mockApi({
       ...signedIn(),
-      'GET /api/exams/by-slug/ielts': () => jsonResponse(examDetail({ id: PREMIUM_ID, slug: 'ielts' })),
       'GET /api/exams/by-slug/nursing-licensure': () => jsonResponse(examDetail({ id: FREE_ID })),
-      'GET /api/access/exams': ({ url }) =>
-        jsonResponse(url.searchParams.get('examIds') === FREE_ID ? { [FREE_ID]: free } : { [PREMIUM_ID]: locked }),
+      'GET /api/attempts': () => jsonResponse([]),
+      'GET /api/access/exams': () =>
+        jsonResponse({
+          [FREE_ID]: { available: true, premium: false, modes: [mode('PRACTICE', 'FREE', 3, 1), mode('MOCK', 'LOCKED', 1, 1)] },
+        }),
     });
-    const view = renderRoute('/exams/ielts');
-    expect(await screen.findByText(/an administrator can give your account Premium access/)).toBeInTheDocument();
-    view.unmount();
-
     renderRoute('/exams/nursing-licensure');
-    const mock = (await screen.findByRole('heading', { level: 3, name: /Mock exam/ })).closest('li') as HTMLElement;
-    await waitFor(() => expect(within(mock).getByText('Premium')).toBeInTheDocument());
-    const practice = screen.getByRole('heading', { level: 3, name: /Practice/ }).closest('li') as HTMLElement;
-    expect(within(practice).queryByText('Premium')).not.toBeInTheDocument();
-    expect(screen.getByText('Free: position 1 of the first 6 in the catalogue')).toBeInTheDocument();
+    const practice = (await screen.findByRole('heading', { level: 3, name: 'Practice' })).closest('li') as HTMLElement;
+    expect(await within(practice).findByText('2 of 3 free attempts left')).toBeInTheDocument();
+    expect(within(practice).getByRole('link', { name: 'Start' })).toHaveAttribute('href', '/exams/nursing-licensure/start/practice');
+    const mock = screen.getByRole('heading', { level: 3, name: 'Mock exam' }).closest('li') as HTMLElement;
+    expect(within(mock).getByText('Free attempts used (1 of 1)')).toBeInTheDocument();
+    expect(within(mock).getByRole('button', { name: 'Needs Premium' })).toBeDisabled();
+    expect(within(mock).getByText('Premium')).toBeInTheDocument();
+  });
+
+  it('shows a locked preview, without question content, once every exam type is used up', async () => {
+    mockApi({
+      ...signedIn(),
+      'GET /api/exams/by-slug/nursing-licensure': () => jsonResponse(examDetail({ id: FREE_ID })),
+      'GET /api/attempts': () => jsonResponse([]),
+      'GET /api/access/exams': () => jsonResponse({ [FREE_ID]: usedUp }),
+    });
+    renderRoute('/exams/nursing-licensure');
+    expect(await screen.findByRole('region', { name: 'You’ve used your free attempts' })).toBeInTheDocument();
   });
 
   it('shows the student’s plan on their account page', async () => {
     mockApi({
       ...signedIn(),
-      'GET /api/access/me': () =>
-        jsonResponse({
-          premium: true,
-          entitlement: { source: 'MANUAL', endsAt: '2026-12-31T18:29:59Z' },
-          welcomeAttemptsLeft: null,
-          freeExamCount: 6,
-        }),
+      'GET /api/access/me': () => jsonResponse({ premium: true, entitlement: { source: 'MANUAL', endsAt: '2026-12-31T18:29:59Z' } }),
     });
     renderRoute('/account');
     const plan = (await screen.findByRole('heading', { name: 'Your plan' })).closest('div') as HTMLElement;
-    expect(await within(plan).findByText(/Every premium exam is open to you until/)).toBeInTheDocument();
+    expect(await within(plan).findByText(/Unlimited attempts on every exam until/)).toBeInTheDocument();
   });
 });
 
 const admin = { id: 'admin-1', roles: ['ADMIN', 'STUDENT'], displayName: 'Kani Admin', email: 'kani@example.com' };
 
-const policies = {
-  policies: [
-    {
-      ruleCode: 'FA1_CATALOGUE_POSITION',
-      active: true,
-      params: { count: 6, scope: 'GLOBAL' },
-      version: 2,
-      updatedAt: '2026-10-25T08:00:00Z',
-    },
-    { ruleCode: 'FA2_WELCOME_ALLOWANCE', active: false, params: { attempts: 2 }, version: 0, updatedAt: '2026-10-25T08:00:00Z' },
-    {
-      ruleCode: 'FA4_FREE_FEATURES',
-      active: true,
-      params: { modes: ['PRACTICE', 'MOCK', 'USER_FRIENDLY'] },
-      version: 0,
-      updatedAt: '2026-10-25T08:00:00Z',
-    },
-  ],
-  freeExamIds: ['e1'],
-  exams: [
-    {
-      examId: 'e1',
-      title: 'O/L Science',
-      slug: 'ol-science',
-      categoryId: 'c1',
-      displayOrder: 1,
-      access: 'FREE',
-      reason: 'FA1_POSITION_1_OF_6',
-    },
-    {
-      examId: 'e7',
-      title: 'A/L Physics',
-      slug: 'al-physics',
-      categoryId: 'c1',
-      displayOrder: 7,
-      access: 'PREMIUM',
-      reason: 'SUBSCRIPTION_REQUIRED',
-    },
-  ],
-};
+const freeList = [
+  { examId: 'e1', title: 'O/L Science', slug: 'ol-science', modes: ['PRACTICE', 'MOCK'], freeAttempts: { PRACTICE: 3, MOCK: 0 } },
+];
 
 describe('admin access page', () => {
-  it('lists which exams are free and saves a rule with its version', async () => {
-    const saved: { body: unknown; ifMatch: string | null }[] = [];
+  it('lists each published exam’s free attempts per exam type, linking to where they are set', async () => {
     mockApi({
       ...signedIn(admin),
-      'GET /api/admin/billing/policies': () => jsonResponse(policies),
+      'GET /api/admin/billing/free-attempts': () => jsonResponse(freeList),
       'GET /api/admin/billing/entitlements': () => jsonResponse([]),
       'GET /api/admin/users': () => jsonResponse({ items: [], page: { page: 0, size: 25, totalElements: 0, totalPages: 0 } }),
-      'PUT /api/admin/billing/policies/FA1_CATALOGUE_POSITION': ({ body, init }) => {
-        saved.push({ body, ifMatch: new Headers(init?.headers).get('If-Match') });
-        return jsonResponse({ ...policies.policies[0], params: { count: 3, scope: 'CATEGORY' }, version: 3 });
-      },
     });
     renderRoute('/admin/access');
-    const table = await screen.findByRole('table', { name: 'Published exams and their access' });
-    const rows = within(table).getAllByRole('row');
-    expect(rows[1]).toHaveTextContent('O/L Science');
-    expect(rows[1]).toHaveTextContent('Free: position 1 of the first 6 in the catalogue');
-    expect(rows[2]).toHaveTextContent('Premium');
-
-    const rule = screen.getByRole('form', { name: 'Free exams by catalogue position' });
-    await userEvent.clear(within(rule).getByLabelText('How many'));
-    await userEvent.type(within(rule).getByLabelText('How many'), '3');
-    await userEvent.selectOptions(within(rule).getByLabelText('Counted'), 'CATEGORY');
-    await userEvent.click(within(rule).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(saved).toHaveLength(1));
-    expect(saved[0]).toEqual({ body: { active: true, params: { count: 3, scope: 'CATEGORY' } }, ifMatch: '"2"' });
+    const table = await screen.findByRole('table', { name: 'Published exams and their free attempts' });
+    const row = within(table).getAllByRole('row')[1] as HTMLElement;
+    expect(within(row).getByRole('link', { name: 'O/L Science' })).toHaveAttribute('href', '/admin/exams/e1/modes');
+    expect(row).toHaveTextContent('3 free');
+    expect(row).toHaveTextContent('Premium only');
+    expect(row).toHaveTextContent('Off');
   });
 
   it('gives a student Premium and revokes it with a reason', async () => {
@@ -172,7 +146,7 @@ describe('admin access page', () => {
     };
     mockApi({
       ...signedIn(admin),
-      'GET /api/admin/billing/policies': () => jsonResponse(policies),
+      'GET /api/admin/billing/free-attempts': () => jsonResponse(freeList),
       'GET /api/admin/users': () =>
         jsonResponse({ items: [student], page: { page: 0, size: 25, totalElements: 1, totalPages: 1 } }),
       'GET /api/admin/users/names': () => jsonResponse([{ id: 'u1', displayName: 'Amaya Perera' }]),

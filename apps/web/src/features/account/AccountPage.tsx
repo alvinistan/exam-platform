@@ -159,24 +159,16 @@ function PlanCard() {
       ) : me.data.premium && me.data.entitlement ? (
         <p className="flex flex-wrap items-center gap-2">
           <Badge tone="premium">Premium</Badge>
-          <span>Every premium exam is open to you until {longDate.format(new Date(me.data.entitlement.endsAt))}.</span>
+          <span>Unlimited attempts on every exam until {longDate.format(new Date(me.data.entitlement.endsAt))}.</span>
         </p>
       ) : (
-        <div className="flex flex-col gap-1">
-          <p className="flex flex-wrap items-center gap-2">
-            <Badge tone="free">Free</Badge>
-            <span>
-              {me.data.freeExamCount === 1 ? '1 exam is' : `${me.data.freeExamCount} exams are`} free for everyone. Premium
-              exams are marked with a lock.
-            </span>
-          </p>
-          {me.data.welcomeAttemptsLeft !== null && me.data.welcomeAttemptsLeft > 0 && (
-            <p className="text-[14.5px] text-muted">
-              You have {me.data.welcomeAttemptsLeft} welcome attempt{me.data.welcomeAttemptsLeft === 1 ? '' : 's'} to try premium
-              exams.
-            </p>
-          )}
-        </div>
+        <p className="flex flex-wrap items-center gap-2">
+          <Badge tone="free">Free</Badge>
+          <span>
+            Each exam gives you a few free attempts of every exam type. When they’re used up, Premium gives you unlimited
+            attempts.
+          </span>
+        </p>
       )}
     </Card>
   );

@@ -8,7 +8,7 @@ export const MODES: readonly Mode[] = ['PRACTICE', 'MOCK', 'USER_FRIENDLY'];
 export const modeLabels: Record<Mode, string> = {
   PRACTICE: 'Practice',
   MOCK: 'Mock exam',
-  USER_FRIENDLY: 'Guided practice',
+  USER_FRIENDLY: 'Adaptive exam',
 };
 
 export interface PageMeta {

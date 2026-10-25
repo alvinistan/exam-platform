@@ -262,7 +262,7 @@ function NodeDialog({ editing, onClose, onSaved }: { editing: Editing; onClose: 
         {editing.kind === 'topic' && otherTopics.length > 0 && (
           <fieldset className="flex flex-col gap-2">
             <legend className="mb-1 text-sm font-semibold">Prerequisites (optional)</legend>
-            <p className="text-[13px] text-muted">Topics a student should know first. Recorded now; guided practice will use them to order topics.</p>
+            <p className="text-[13px] text-muted">Topics a student should know first. Recorded now; the adaptive exam will use them to order topics.</p>
             <div className="flex max-h-48 flex-col gap-2 overflow-y-auto rounded-md border border-border p-3">
               {otherTopics.map((t) => (
                 <CheckboxField

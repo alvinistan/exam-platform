@@ -1,5 +1,21 @@
 # Changelog
 
+## Phase 9 (Step A) — Exam flow for Practice, Mock and Adaptive exams
+
+Students can now take exams. Built from the client's O/L Science requirements and the Adaptive Exam System spec.
+
+- **Start an exam:** on the exam page each exam type has a Start button. Students pick topics (checkboxes) and either a number of questions (5/10/20/30, up to the exam type's maximum) or the time they have (10/20/30 minutes).
+- **Question choice:** random, topics take turns, no repeats within a session, questions seen in the last 7 days come last. Time-based sessions are sized from each question's estimated solving time.
+- **Practice and Adaptive exam:** one question at a time; choosing an answer checks it on the server and shows right/wrong, the correct answer, the explanation and key points. Correct answers move on automatically after 2.5 s; after a wrong answer the student presses Next.
+- **Mock exam:** server-kept countdown (the minutes chosen, or the questions' estimated time, never above the exam's limit), question map with answered/flagged states, answers changeable until submit, review-before-submit, automatic hand-in at time-up. Answers more than 5 s late are refused. Feedback after submit by default; admins can switch it to after each question. One mock in progress per exam.
+- **Results and review:** score, correct/incorrect/not answered, time, pass mark, per-topic breakdown with "Revise next", and every question with its answer and explanation (filter by incorrect / not answered / correct). History of attempts on the exam page.
+- **Free attempts per exam type** replace "the first 6 exams are free": each exam type has its own free attempts per student (defaults Practice 3, Mock 1, Adaptive 3). When used up, that exam type is locked until Premium; results are kept. Admin Access page lists them; the old policy rules and their tables are removed.
+- **Admin step 4 "Exam types":** on/off, most questions per session (default 30), free attempts, Mock time limit and Mock feedback timing.
+- **Subject → Topics:** the setup no longer shows modules; topics are added straight under a subject (kept in a hidden module for compatibility).
+- **Sample exam** rebuilt: O/L Science with the 10 topics, 90 questions (3 Easy, 3 Medium, 3 Hard per topic), all three exam types on.
+- "Guided practice" is renamed **Adaptive exam**. Difficulty adaptation and the progress profile come in Step B.
+- Backend: assessment-service attempt engine (new), catalog-service `/internal/exams/{id}/question-pool` and `/internal/question-versions`, subscription-service free-attempt counting. New `.env` value `ASSESSMENT_SERVICE_CLIENT_SECRET`.
+
 ## Phase 8 — Freemium access and entitlements
 
 - identity-service: OAuth 2.0 client-credentials grant at `POST /oauth2/token` for backend services (ADR-005). Clients

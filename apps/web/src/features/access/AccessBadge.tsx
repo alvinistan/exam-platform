@@ -1,12 +1,13 @@
 import { Lock, LockOpen } from 'lucide-react';
 import { Badge } from '@/components/ui';
-import type { AccessStatus } from './api';
+import { examAccessSummary, type AccessStatus } from './api';
 
-/** Free, Premium (locked) or Premium (unlocked). Always text plus icon, never colour alone. */
+/** Free to try, Premium (locked) or Premium (unlocked). Always text plus icon, never colour alone. */
 export function AccessBadge({ status }: { status: AccessStatus | undefined }) {
-  if (!status || status.reason === 'EXAM_UNAVAILABLE') return null;
-  if (status.access === 'FREE') return <Badge tone="free">Free</Badge>;
-  if (status.access === 'PREMIUM_UNLOCKED') {
+  const summary = examAccessSummary(status);
+  if (!summary) return null;
+  if (summary === 'FREE') return <Badge tone="free">Free to try</Badge>;
+  if (summary === 'PREMIUM_OPEN') {
     return (
       <Badge tone="premium">
         <LockOpen aria-hidden="true" className="size-3.5" /> Premium · unlocked

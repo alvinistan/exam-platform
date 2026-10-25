@@ -37,8 +37,8 @@ export const STEPS = [
   {
     slug: 'modes',
     number: 4,
-    title: 'Modes',
-    hint: 'Practice, mock, guided',
+    title: 'Exam types',
+    hint: 'Practice, mock, adaptive',
     serverStep: 'MODES',
   },
   {

@@ -1,41 +1,14 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Lock } from 'lucide-react';
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  CheckboxField,
-  Dialog,
-  EmptyState,
-  ErrorState,
-  SelectField,
-  Skeleton,
-  TextField,
-} from '@/components/ui';
-import { accessKeys, describeReason } from '@/features/access/api';
-import { modeLabels, type Mode } from '@/features/exams/api';
+import { Alert, Badge, Button, Card, Dialog, EmptyState, ErrorState, SelectField, Skeleton, TextField } from '@/components/ui';
+import { accessKeys } from '@/features/access/api';
+import { MODES, modeLabels } from '@/features/exams/api';
 import { useUserNames } from '@/features/admin/questions/api';
 import { useUsers } from '@/features/admin/users/api';
 import { ApiError } from '@/lib/api/problem';
-import {
-  accessAdminKeys,
-  grantEntitlement,
-  revokeEntitlement,
-  savePolicy,
-  useEntitlements,
-  usePolicies,
-  type Entitlement,
-  type FeatureParams,
-  type Policy,
-  type PositionParams,
-  type RuleCode,
-  type WelcomeParams,
-} from './api';
+import { accessAdminKeys, grantEntitlement, revokeEntitlement, useEntitlements, useFreeAttempts, type Entitlement } from './api';
 
-const MODES: Mode[] = ['PRACTICE', 'MOCK', 'USER_FRIENDLY'];
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 
 function useInvalidateAccess() {
@@ -47,268 +20,81 @@ function useInvalidateAccess() {
 }
 
 const errorText = (error: unknown) =>
-  error instanceof ApiError
-    ? error.code === 'CONFLICT'
-      ? 'Someone else changed this rule. Reload the page and try again.'
-      : (error.problem?.errors?.[0]?.message ?? error.message)
-    : 'Please try again.';
+  error instanceof ApiError ? (error.problem?.errors?.[0]?.message ?? error.message) : 'Please try again.';
 
-/** Who gets what for free, which exams that makes free, and Premium access granted by hand (Phase 8). */
+/**
+ * Free attempts per exam type across the catalogue (set in each exam's step 4), and Premium access granted by hand.
+ * Students get the free attempts of each exam type; after that the type is locked until they have Premium.
+ */
 export function AccessPage() {
-  const policies = usePolicies();
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-extrabold tracking-tight">Access</h1>
         <p className="text-muted">
-          Decide which exams are free. Everything else needs Premium. Changes apply to the next session a student starts.
+          Every exam type gives each student a number of free attempts. When they are used up, that exam type needs Premium.
+          Past results always stay.
         </p>
       </div>
-      {policies.isPending ? (
-        <div aria-busy="true" className="flex flex-col gap-3">
-          <p role="status" className="sr-only">
-            Loading access rules…
-          </p>
-          <Skeleton className="h-64 w-full" />
-        </div>
-      ) : policies.isError ? (
-        <ErrorState title="We couldn’t load the access rules" onRetry={() => void policies.refetch()} />
-      ) : (
-        <>
-          <RulesCard policies={policies.data.policies} />
-          <FreeListCard exams={policies.data.exams} />
-        </>
-      )}
+      <FreeAttemptsCard />
       <PremiumAccessCard />
     </div>
   );
 }
 
-function find<P>(policies: Policy[], code: RuleCode) {
-  return policies.find((p) => p.ruleCode === code) as Policy<P> | undefined;
-}
-
-function RulesCard({ policies }: { policies: Policy[] }) {
-  const position = find<PositionParams>(policies, 'FA1_CATALOGUE_POSITION');
-  const features = find<FeatureParams>(policies, 'FA4_FREE_FEATURES');
-  const welcome = find<WelcomeParams>(policies, 'FA2_WELCOME_ALLOWANCE');
-  return (
-    <Card className="flex flex-col gap-6 p-6">
-      <h2 className="text-lg font-bold">Free access rules</h2>
-      {position && <PositionRule key={`p${position.version}`} policy={position} />}
-      {features && <FeatureRule key={`f${features.version}`} policy={features} />}
-      {welcome && <WelcomeRule key={`w${welcome.version}`} policy={welcome} />}
-    </Card>
-  );
-}
-
-function RuleForm(props: {
-  title: string;
-  help: string;
-  rule: RuleCode;
-  version: number;
-  value: () => { active: boolean; params: object } | string;
-  dirty: boolean;
-  children: ReactNode;
-}) {
-  const invalidate = useInvalidateAccess();
-  const [problem, setProblem] = useState<string | null>(null);
-  const save = useMutation({
-    mutationFn: (v: { active: boolean; params: object }) => savePolicy(props.rule, props.version, v.active, v.params),
-    onSuccess: invalidate,
-  });
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const value = props.value();
-    if (typeof value === 'string') {
-      setProblem(value);
-      return;
-    }
-    setProblem(null);
-    save.mutate(value);
-  };
-  const headingId = `rule-${props.rule}`;
-  return (
-    <form
-      noValidate
-      onSubmit={submit}
-      aria-labelledby={headingId}
-      className="flex flex-col gap-3 border-t border-border pt-5 first-of-type:border-t-0 first-of-type:pt-0"
-    >
-      <div>
-        <h3 id={headingId} className="font-bold">
-          {props.title}
-        </h3>
-        <p className="text-[14.5px] text-muted">{props.help}</p>
-      </div>
-      {props.children}
-      {(problem ?? (save.isError ? errorText(save.error) : null)) && (
-        <p className="text-[14px] text-danger-ink" role="alert">
-          {problem ?? errorText(save.error)}
-        </p>
-      )}
-      <div className="flex items-center gap-3">
-        <Button type="submit" variant="secondary" size="sm" loading={save.isPending} disabled={!props.dirty}>
-          Save
-        </Button>
-        {save.isSuccess && !props.dirty && <span className="text-[14px] text-success-ink">Saved.</span>}
-      </div>
-    </form>
-  );
-}
-
-function PositionRule({ policy }: { policy: Policy<PositionParams> }) {
-  const [active, setActive] = useState(policy.active);
-  const [count, setCount] = useState(String(policy.params.count ?? 6));
-  const [scope, setScope] = useState<PositionParams['scope']>(policy.params.scope ?? 'GLOBAL');
-  const dirty = active !== policy.active || count !== String(policy.params.count) || scope !== policy.params.scope;
-  return (
-    <RuleForm
-      title="Free exams by catalogue position"
-      help="The first exams in the catalogue order are free. Set each exam’s position in its Details step (More options)."
-      rule="FA1_CATALOGUE_POSITION"
-      version={policy.version}
-      dirty={dirty}
-      value={() =>
-        /^\d{1,4}$/.test(count) && Number(count) <= 1000
-          ? { active, params: { count: Number(count), scope } }
-          : 'Enter how many exams are free: a whole number from 0 to 1000.'
-      }
-    >
-      <CheckboxField label="Make the first exams free" checked={active} onChange={(e) => setActive(e.target.checked)} />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          label="How many"
-          inputMode="numeric"
-          value={count}
-          onChange={(e) => setCount(e.target.value)}
-          disabled={!active}
-        />
-        <SelectField
-          label="Counted"
-          value={scope}
-          onChange={(e) => setScope(e.target.value as PositionParams['scope'])}
-          disabled={!active}
-        >
-          <option value="GLOBAL">Across the whole catalogue</option>
-          <option value="CATEGORY">In each category</option>
-        </SelectField>
-      </div>
-    </RuleForm>
-  );
-}
-
-function FeatureRule({ policy }: { policy: Policy<FeatureParams> }) {
-  const [modes, setModes] = useState<Mode[]>(policy.active ? policy.params.modes : MODES);
-  const original = policy.active ? policy.params.modes : MODES;
-  const dirty = MODES.some((m) => modes.includes(m) !== original.includes(m));
-  return (
-    <RuleForm
-      title="Modes on free exams"
-      help="Which ways of studying a free exam offers without Premium."
-      rule="FA4_FREE_FEATURES"
-      version={policy.version}
-      dirty={dirty}
-      value={() => (modes.length ? { active: true, params: { modes } } : 'Choose at least one mode.')}
-    >
-      <fieldset className="flex flex-wrap gap-x-6 gap-y-2">
-        <legend className="sr-only">Free modes</legend>
-        {MODES.map((m) => (
-          <CheckboxField
-            key={m}
-            label={modeLabels[m]}
-            checked={modes.includes(m)}
-            onChange={(e) => setModes(e.target.checked ? [...modes, m] : modes.filter((x) => x !== m))}
-          />
-        ))}
-      </fieldset>
-    </RuleForm>
-  );
-}
-
-function WelcomeRule({ policy }: { policy: Policy<WelcomeParams> }) {
-  const [active, setActive] = useState(policy.active);
-  const [attempts, setAttempts] = useState(String(policy.params.attempts ?? 2));
-  const dirty = active !== policy.active || attempts !== String(policy.params.attempts);
-  return (
-    <RuleForm
-      title="Welcome attempts"
-      help="Lets each new student try a few sessions on premium exams, using trial questions. A session counts when it starts."
-      rule="FA2_WELCOME_ALLOWANCE"
-      version={policy.version}
-      dirty={dirty}
-      value={() =>
-        /^\d{1,2}$/.test(attempts) && Number(attempts) >= 1 && Number(attempts) <= 50
-          ? { active, params: { attempts: Number(attempts) } }
-          : 'Enter a number of attempts from 1 to 50.'
-      }
-    >
-      <CheckboxField label="Give new students welcome attempts" checked={active} onChange={(e) => setActive(e.target.checked)} />
-      <div className="max-w-xs">
-        <TextField
-          label="Attempts per student"
-          inputMode="numeric"
-          value={attempts}
-          onChange={(e) => setAttempts(e.target.value)}
-          disabled={!active}
-        />
-      </div>
-    </RuleForm>
-  );
-}
-
-function FreeListCard({
-  exams,
-}: {
-  exams: { examId: string; title: string; displayOrder: number | null; access: 'FREE' | 'PREMIUM'; reason: string }[];
-}) {
+function FreeAttemptsCard() {
+  const list = useFreeAttempts();
   return (
     <Card className="flex flex-col gap-4 p-6">
       <div>
-        <h2 className="text-lg font-bold">Published exams</h2>
-        <p className="text-[14.5px] text-muted">In catalogue order, with what the rules above make of each one.</p>
+        <h2 className="text-lg font-bold">Free attempts on published exams</h2>
+        <p className="text-[14.5px] text-muted">
+          Change the numbers in an exam’s setup, step 4 (Exam types). Changes apply to the next attempt a student starts.
+        </p>
       </div>
-      {exams.length === 0 ? (
+      {list.isPending ? (
+        <Skeleton className="h-32 w-full" />
+      ) : list.isError ? (
+        <ErrorState title="We couldn’t load the published exams" onRetry={() => void list.refetch()} />
+      ) : list.data.length === 0 ? (
         <p className="text-muted">No published exams yet. They appear here a few seconds after you publish them.</p>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-[520px] border-collapse text-[14.5px]">
-            <caption className="sr-only">Published exams and their access</caption>
+          <table className="w-full min-w-[560px] border-collapse text-[14.5px]">
+            <caption className="sr-only">Published exams and their free attempts</caption>
             <thead>
               <tr className="border-b border-border bg-[#fafbfc] text-left text-[12.5px] font-bold tracking-wider text-muted uppercase">
                 <th scope="col" className="px-4 py-3">
-                  Position
-                </th>
-                <th scope="col" className="px-4 py-3">
                   Exam
                 </th>
-                <th scope="col" className="px-4 py-3">
-                  Access
-                </th>
-                <th scope="col" className="px-4 py-3">
-                  Why
-                </th>
+                {MODES.map((m) => (
+                  <th key={m} scope="col" className="px-4 py-3">
+                    {modeLabels[m]}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {exams.map((e) => (
+              {list.data.map((e) => (
                 <tr key={e.examId} className="border-b border-border last:border-b-0">
-                  <td className="px-4 py-3 tabular-nums">{e.displayOrder ?? '—'}</td>
                   <td className="px-4 py-3">
-                    <Link to={`/admin/exams/${e.examId}/details`} className="font-semibold">
+                    <Link to={`/admin/exams/${e.examId}/modes`} className="font-semibold">
                       {e.title || 'Untitled exam'}
                     </Link>
                   </td>
-                  <td className="px-4 py-3">
-                    {e.access === 'FREE' ? (
-                      <Badge tone="free">Free</Badge>
-                    ) : (
-                      <Badge tone="premium">
-                        <Lock aria-hidden="true" className="size-3.5" /> Premium
-                      </Badge>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-ink-2">{describeReason(e.reason)}</td>
+                  {MODES.map((m) => (
+                    <td key={m} className="px-4 py-3 tabular-nums">
+                      {e.modes.includes(m) ? (
+                        e.freeAttempts[m] ? (
+                          <Badge tone="free">{e.freeAttempts[m]} free</Badge>
+                        ) : (
+                          <Badge tone="premium">Premium only</Badge>
+                        )
+                      ) : (
+                        <span className="text-muted">Off</span>
+                      )}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
