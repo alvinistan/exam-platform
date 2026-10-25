@@ -3,7 +3,7 @@
 # Build from the repository root:
 #   docker build -f infra/docker/service.Dockerfile --build-arg MODULE=services/catalog-service -t catalog-service .
 
-FROM maven:3.9.11-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-26 AS build
 ARG MODULE
 WORKDIR /src
 COPY backend/ ./
