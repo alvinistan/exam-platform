@@ -1,4 +1,5 @@
-import { Link } from 'react-router';
+import { Link, Navigate } from 'react-router';
+import { useAuth } from '@/lib/auth/AuthContext';
 import { ArrowRight, BookOpenCheck, Sparkles, Timer } from 'lucide-react';
 import { Card, Skeleton, buttonClasses } from '@/components/ui';
 import { useExamAccess } from '@/features/access/api';
@@ -23,7 +24,14 @@ const modes = [
   },
 ];
 
+/** Signed-in students start at their dashboard; everyone else sees the public home page. */
 export function HomePage() {
+  const { state } = useAuth();
+  if (state.status === 'signedIn') return <Navigate to="/dashboard" replace />;
+  return <PublicHome />;
+}
+
+function PublicHome() {
   return (
     <>
       <section className="border-b border-border bg-surface">

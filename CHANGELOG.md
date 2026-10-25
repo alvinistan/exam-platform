@@ -1,5 +1,19 @@
 # Changelog
 
+## Phase 10 — Student dashboard
+
+- **Dashboard** (`/dashboard`): signed-in students land here from the home page, and it's in the header next to Exams.
+  - Greeting and plan status (Free plan / Premium until …).
+  - **Continue where you left off:** every unfinished attempt, with when a mock exam's time runs out.
+  - **Totals:** questions answered, correct overall, day streak (consecutive days with an answer, in the student's own time zone) and questions answered this week.
+  - **Practise next:** the weakest topics across the student's exams, with a button that starts a session on them (Adaptive exam when offered, otherwise Practice).
+  - **Activity:** questions answered on each of the last 14 days, with hover/focus details and a screen-reader table.
+  - **Your exams:** accuracy, answers, sessions, topics to revise, and links to the exam and its progress page.
+  - **Recent results:** the last five finished attempts, with links to review them.
+  - New students see a three-step "Start your first exam" guide instead.
+- **Backend:** `GET /api/progress/overview?tz=…` (assessment-service) returns totals, streak, 14-day activity, focus topics across exams and per-exam summaries, all from marked answers.
+- **Header:** the brand stays on one line on phones.
+
 ## Phase 9 (Step B) — Adaptive difficulty per topic and My progress
 
 - **Levels per topic (ADR-016):** every student starts each topic at Medium. After at least 5 answers since the last change, 80%+ correct (of the last 8) moves the topic up a level and below 40% moves it down, one step at a time.

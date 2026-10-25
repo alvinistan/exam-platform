@@ -185,6 +185,6 @@ subscription-service decides access on every request (ADR-007); nothing is cache
 
 ## Status
 
-Phases 0–9 are complete: catalogue, question bank, guided exam setup, free attempts and Premium access, the exam
-flow for Practice, Mock and Adaptive exams, and adaptive difficulty per topic with a "My progress" page. See
-`CHANGELOG.md`.
+Phases 0–10 are complete: catalogue, question bank, guided exam setup, free attempts and Premium access, the exam
+flow for Practice, Mock and Adaptive exams, adaptive difficulty per topic with a "My progress" page, and the student
+dashboard. Subscriptions and payments come next; AI explanations are deferred. See `CHANGELOG.md`.

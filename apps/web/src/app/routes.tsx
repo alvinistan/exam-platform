@@ -8,6 +8,7 @@ import {
   AttemptPage,
   CategoriesPage,
   ContentLibraryPage,
+  DashboardPage,
   ExamSetupIndex,
   ExamSetupPage,
   NewExamPage,
@@ -41,6 +42,14 @@ export const routes: RouteObject[] = [
         element: (
           <RequireAuth>
             <StartPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'dashboard',
+        element: (
+          <RequireAuth>
+            <DashboardPage />
           </RequireAuth>
         ),
       },
