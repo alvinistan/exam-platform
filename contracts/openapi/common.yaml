@@ -92,17 +92,24 @@ components:
       enum: [STRONG, DEVELOPING, REVIEW, INSUFFICIENT]
     AccessStatus:
       type: object
-      description: The caller's access to an exam, decided by subscription-service.
-      required: [access, reason]
+      description: >-
+        The caller's access to an exam, decided by subscription-service. Each switched-on exam type has its own free
+        attempts; once they are used, that type is locked until the student has Premium.
+      required: [available, premium, modes]
       properties:
-        access: { type: string, enum: [FREE, PREMIUM_UNLOCKED, LOCKED] }
-        reason:
-          type: string
-          description: Why, e.g. FA1_POSITION_2_OF_6, ACTIVE_SUBSCRIPTION, WELCOME_ALLOWANCE, SUBSCRIPTION_REQUIRED.
-        freeModes:
+        available: { type: boolean, description: 'False when the exam is unknown, a draft or archived.' }
+        premium: { type: boolean, description: The caller has an active entitlement. }
+        modes:
           type: array
-          items: { $ref: '#/components/schemas/Mode' }
-        welcomeAttemptsLeft: { type: integer, minimum: 0 }
+          items:
+            type: object
+            required: [mode, access, freeAttempts]
+            properties:
+              mode: { $ref: '#/components/schemas/Mode' }
+              access: { type: string, enum: [OPEN, FREE, LOCKED], description: 'OPEN: Premium. FREE: free attempts left.' }
+              freeAttempts: { type: integer, minimum: 0 }
+              used: { type: [integer, 'null'], description: Null for anonymous visitors and Premium students. }
+              left: { type: [integer, 'null'] }
     SetupIssue:
       type: object
       required: [step, message]

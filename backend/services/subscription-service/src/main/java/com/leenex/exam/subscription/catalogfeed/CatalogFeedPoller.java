@@ -1,8 +1,12 @@
 package com.leenex.exam.subscription.catalogfeed;
 
+import com.leenex.exam.subscription.access.AccessRules;
 import com.leenex.exam.subscription.catalogfeed.CatalogFeedClient.FeedEvent;
 import com.leenex.exam.subscription.config.SubscriptionProperties;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -71,7 +75,26 @@ public class CatalogFeedPoller {
         JsonNode order = p.get("displayOrder");
         exams.upsert(UUID.fromString(p.get("examId").asString()), UUID.fromString(p.get("categoryId").asString()),
                 text(p, "title"), text(p, "slug"), order == null || order.isNull() ? null : order.asInt(),
-                p.get("status").asString(), event.occurredAt());
+                p.get("status").asString(), event.occurredAt(), modes(p), freeAttempts(p));
+    }
+
+    private static List<String> modes(JsonNode p) {
+        List<String> modes = new ArrayList<>();
+        JsonNode node = p.get("modes");
+        if (node != null && node.isArray()) {
+            node.forEach(m -> modes.add(m.asString()));
+        }
+        return modes;
+    }
+
+    /** Older events (before Phase 9) carry no free attempts; those exams then have none until they change. */
+    private static Map<String, Integer> freeAttempts(JsonNode p) {
+        Map<String, Integer> raw = new LinkedHashMap<>();
+        JsonNode node = p.get("freeAttempts");
+        if (node != null && node.isObject()) {
+            node.properties().forEach(e -> raw.put(e.getKey(), e.getValue().asInt()));
+        }
+        return AccessRules.cleanFreeAttempts(raw);
     }
 
     private static String text(JsonNode node, String field) {

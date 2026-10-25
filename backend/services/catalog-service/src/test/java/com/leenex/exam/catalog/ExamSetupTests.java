@@ -92,10 +92,11 @@ class ExamSetupTests extends CatalogTestSupport {
         assertThat((String) read(first, "$.status")).isEqualTo("DRAFT");
         assertThat((String) read(first, "$.title")).contains("(sample)");
         assertThat((String) read(first, "$.slug")).startsWith("ol-science-sample");
-        assertThat((Integer) read(first, "$.publishedQuestionCount")).isEqualTo(24);
-        assertThat((Integer) read(first, "$.topicCount")).isEqualTo(6);
-        assertThat((List<String>) read(first, "$.modes")).containsExactly("PRACTICE", "MOCK");
+        assertThat((Integer) read(first, "$.publishedQuestionCount")).isEqualTo(90);
+        assertThat((Integer) read(first, "$.topicCount")).isEqualTo(10);
+        assertThat((List<String>) read(first, "$.modes")).containsExactly("PRACTICE", "MOCK", "USER_FRIENDLY");
         assertThat((Boolean) read(first, "$.publishReadiness.ready")).isTrue();
+        assertThat((List<Integer>) read(first, "$.modeSettings[*].freeAttempts")).containsExactly(3, 1, 3);
         UUID exam = UUID.fromString(read(first, "$.id"));
         assertThat(auditCount("SAMPLE_EXAM_CREATED", exam)).isEqualTo(1);
 

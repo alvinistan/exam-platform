@@ -43,9 +43,9 @@ public class ModeRepository {
                 INSERT INTO catalog.exam_mode_config (exam_id, mode, enabled, default_count, min_count, max_count,
                     time_limit_seconds, per_question_seconds, mix_simple_pct, mix_medium_pct, mix_hard_pct,
                     shuffle_questions, shuffle_options, feedback_timing, result_visibility, negative_mark, pass_mark_pct,
-                    allow_topic_choice, adaptive_enabled, max_retakes)
+                    allow_topic_choice, adaptive_enabled, max_retakes, free_attempts)
                 VALUES (:exam, :mode, :enabled, :def, :min, :max, :time, :perQ, :simple, :medium, :hard, :shuffleQ,
-                    :shuffleO, :feedback, :visibility, :negative, :pass, :topicChoice, :adaptive, :retakes)
+                    :shuffleO, :feedback, :visibility, :negative, :pass, :topicChoice, :adaptive, :retakes, :free)
                 ON CONFLICT (exam_id, mode) DO UPDATE SET
                     enabled = EXCLUDED.enabled, default_count = EXCLUDED.default_count, min_count = EXCLUDED.min_count,
                     max_count = EXCLUDED.max_count, time_limit_seconds = EXCLUDED.time_limit_seconds,
@@ -55,7 +55,8 @@ public class ModeRepository {
                     feedback_timing = EXCLUDED.feedback_timing, result_visibility = EXCLUDED.result_visibility,
                     negative_mark = EXCLUDED.negative_mark, pass_mark_pct = EXCLUDED.pass_mark_pct,
                     allow_topic_choice = EXCLUDED.allow_topic_choice, adaptive_enabled = EXCLUDED.adaptive_enabled,
-                    max_retakes = EXCLUDED.max_retakes, version = catalog.exam_mode_config.version + 1
+                    max_retakes = EXCLUDED.max_retakes, free_attempts = EXCLUDED.free_attempts,
+                    version = catalog.exam_mode_config.version + 1
                 """)
                 .param("exam", examId).param("mode", s.mode()).param("enabled", s.enabled())
                 .param("def", s.defaultCount()).param("min", s.minCount()).param("max", s.maxCount())
@@ -66,7 +67,7 @@ public class ModeRepository {
                 .param("feedback", s.feedbackTiming()).param("visibility", s.resultVisibility())
                 .param("negative", s.negativeMark()).param("pass", s.passMarkPct())
                 .param("topicChoice", s.allowTopicChoice()).param("adaptive", s.adaptiveEnabled())
-                .param("retakes", s.maxRetakes())
+                .param("retakes", s.maxRetakes()).param("free", s.freeAttempts())
                 .update();
     }
 
@@ -79,6 +80,6 @@ public class ModeRepository {
                 rs.getString("result_visibility"), rs.getBigDecimal("negative_mark"),
                 rs.getObject("pass_mark_pct") == null ? null : rs.getInt("pass_mark_pct"),
                 rs.getBoolean("allow_topic_choice"), rs.getBoolean("adaptive_enabled"),
-                (Integer) rs.getObject("max_retakes"), rs.getInt("version"), true);
+                (Integer) rs.getObject("max_retakes"), rs.getInt("free_attempts"), rs.getInt("version"), true);
     }
 }

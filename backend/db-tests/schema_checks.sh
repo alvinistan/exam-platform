@@ -65,7 +65,9 @@ deny learning "level outside 1-3 rejected" "INSERT INTO topic_mastery (student_i
 
 echo "== billing"
 P1=60000000-0000-0000-0000-000000000001; X1=61000000-0000-0000-0000-000000000001
-ok   billing "default policies seeded"    "DO \$\$BEGIN IF (SELECT count(*) FROM free_access_policy)<>3 THEN RAISE EXCEPTION 'x'; END IF; END\$\$"
+ok   billing "count a free attempt"       "INSERT INTO free_attempt_use (attempt_id,student_id,exam_id,mode) VALUES ('$X1','$U1','$P1','MOCK')"
+deny billing "an attempt counts once"     "INSERT INTO free_attempt_use (attempt_id,student_id,exam_id,mode) VALUES ('$X1','$U1','$P1','PRACTICE')"
+deny billing "unknown mode rejected"      "INSERT INTO free_attempt_use (attempt_id,student_id,exam_id,mode) VALUES ('$P1','$U1','$P1','SPEED')"
 deny billing "plan duration must be 1/3/6/12" "INSERT INTO subscription_plan (id,code,name,duration_months,price_minor,currency) VALUES ('$P1','p2','Two months',2,1000,'LKR')"
 ok   billing "create plan"                "INSERT INTO subscription_plan (id,code,name,duration_months,price_minor,currency,active) VALUES ('$P1','m6','6 months',6,450000,'LKR',true)"
 ok   billing "pending payment"            "INSERT INTO payment_transaction (id,student_id,plan_id,provider,provider_ref,idempotency_key,amount_minor,currency) VALUES ('$X1','$U1','$P1','SANDBOX','cs_1','ik1',450000,'LKR')"

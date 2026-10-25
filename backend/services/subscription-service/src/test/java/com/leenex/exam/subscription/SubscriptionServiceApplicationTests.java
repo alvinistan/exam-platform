@@ -63,17 +63,14 @@ class SubscriptionServiceApplicationTests {
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM flyway_schema_history WHERE success AND version = '1'", Integer.class))
                 .isEqualTo(1);
-        assertThat(jdbc.queryForObject("SELECT to_regclass('free_access_policy') IS NOT NULL", Boolean.class))
-                .as("table free_access_policy").isTrue();
+        assertThat(jdbc.queryForObject("SELECT to_regclass('free_attempt_use') IS NOT NULL", Boolean.class))
+                .as("table free_attempt_use").isTrue();
+        assertThat(jdbc.queryForObject("SELECT to_regclass('free_access_policy') IS NULL", Boolean.class))
+                .as("retired table free_access_policy").isTrue();
         assertThat(jdbc.queryForObject("SELECT to_regclass('subscription_plan') IS NOT NULL", Boolean.class))
                 .as("table subscription_plan").isTrue();
         assertThat(jdbc.queryForObject("SELECT to_regclass('entitlement') IS NOT NULL", Boolean.class))
                 .as("table entitlement").isTrue();
-    }
-
-    @Test
-    void defaultFreeAccessPolicyIsSeeded() {
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM free_access_policy WHERE rule_code = 'FA1_CATALOGUE_POSITION' AND active", Integer.class)).isEqualTo(1);
     }
 
     @Test

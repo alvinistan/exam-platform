@@ -147,8 +147,11 @@ class ExamAdministrationTests extends CatalogTestSupport {
         UUID exam = createExam(createCategory(), unique("modes"), List.of());
         MockHttpServletResponse mock = expect(call(put("/api/admin/catalog/exams/" + exam + "/modes/MOCK"), ADMIN,
                 modeInput(true, 10, 40, 100, null, "IMMEDIATE")), 400);
-        assertThat((List<String>) read(mock, "$.errors[*].field"))
-                .containsExactlyInAnyOrder("timeLimitSeconds", "feedbackTiming");
+        assertThat((List<String>) read(mock, "$.errors[*].field")).containsExactly("timeLimitSeconds");
+        // Practice and adaptive exams always give feedback straight away; a mock exam may do either.
+        MockHttpServletResponse practiceFeedback = expect(call(put("/api/admin/catalog/exams/" + exam + "/modes/PRACTICE"), ADMIN,
+                modeInput(true, 5, 10, 50, null, "AFTER_SUBMIT")), 400);
+        assertThat((List<String>) read(practiceFeedback, "$.errors[*].field")).containsExactly("feedbackTiming");
 
         MockHttpServletResponse counts = expect(call(put("/api/admin/catalog/exams/" + exam + "/modes/PRACTICE"), ADMIN,
                 modeInput(true, 20, 10, 5, null, "IMMEDIATE")), 400);
@@ -159,9 +162,13 @@ class ExamAdministrationTests extends CatalogTestSupport {
         expect(call(put("/api/admin/catalog/exams/" + exam + "/modes/PRACTICE"), ADMIN, badMix), 400);
         expect(call(put("/api/admin/catalog/exams/" + exam + "/modes/SPEED"), ADMIN, modeInput(true, 5, 10, 50, null, "IMMEDIATE")), 400);
 
+        Map<String, Object> mockInput = modeInput(true, 10, 40, 100, 5400, "IMMEDIATE");
+        mockInput.put("freeAttempts", 2);
         MockHttpServletResponse saved = expect(call(put("/api/admin/catalog/exams/" + exam + "/modes/MOCK"), ADMIN,
-                modeInput(true, 10, 40, 100, 5400, "AFTER_SUBMIT")), 200);
+                mockInput), 200);
         assertThat((Integer) read(saved, "$.timeLimitSeconds")).isEqualTo(5400);
+        assertThat((Integer) read(saved, "$.freeAttempts")).isEqualTo(2);
+        assertThat((String) read(saved, "$.feedbackTiming")).isEqualTo("IMMEDIATE");
         assertThat((Boolean) read(saved, "$.saved")).isTrue();
         assertThat((List<String>) read(adminGet("/api/admin/catalog/exams/" + exam), "$.modes")).containsExactly("MOCK");
         assertThat((Integer) read(adminGet("/api/admin/catalog/exams/" + exam), "$.version")).isEqualTo(1);

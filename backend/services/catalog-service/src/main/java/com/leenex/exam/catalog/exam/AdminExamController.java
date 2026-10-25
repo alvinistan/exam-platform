@@ -159,7 +159,8 @@ public class AdminExamController {
             @Min(1) @Max(100) Integer passMarkPct,
             @NotNull Boolean allowTopicChoice,
             Boolean adaptiveEnabled,
-            @Min(0) @Max(1000) Integer maxRetakes) {
+            @Min(0) @Max(1000) Integer maxRetakes,
+            @Min(0) @Max(1000) Integer freeAttempts) {
     }
 
     @GetMapping("/{examId}/modes")
@@ -180,7 +181,8 @@ public class AdminExamController {
                         input.difficultyMix().hard()),
                 input.shuffleQuestions(), input.shuffleOptions(), input.feedbackTiming(), input.resultVisibility(),
                 input.negativeMark().setScale(2, RoundingMode.HALF_UP), input.passMarkPct(), input.allowTopicChoice(),
-                Boolean.TRUE.equals(input.adaptiveEnabled()), input.maxRetakes(), 0, true);
+                Boolean.TRUE.equals(input.adaptiveEnabled()), input.maxRetakes(),
+                input.freeAttempts() != null ? input.freeAttempts() : ModeSettings.suggested(mode).freeAttempts(), 0, true);
         return exams.configureMode(CurrentUser.id(), examId, settings);
     }
 
@@ -197,12 +199,12 @@ public class AdminExamController {
         if (mix.simple() + mix.medium() + mix.hard() != 100) {
             errors.add(Map.of("field", "difficultyMix", "message", "percentages must add up to 100"));
         }
+        if (!"MOCK".equals(mode) && !"IMMEDIATE".equals(in.feedbackTiming())) {
+            errors.add(Map.of("field", "feedbackTiming", "message", "practice and adaptive exams always show answers straight away"));
+        }
         if ("MOCK".equals(mode)) {
             if (in.timeLimitSeconds() == null) {
                 errors.add(Map.of("field", "timeLimitSeconds", "message", "a mock exam needs a time limit"));
-            }
-            if (!"AFTER_SUBMIT".equals(in.feedbackTiming())) {
-                errors.add(Map.of("field", "feedbackTiming", "message", "a mock exam shows answers only after submission"));
             }
         }
         if (in.negativeMark().stripTrailingZeros().scale() > 2) {
