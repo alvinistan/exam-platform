@@ -42,7 +42,7 @@ public class Payments {
     /** False when this student already used the key (a repeated or simultaneous request). */
     public boolean insertTransaction(UUID id, UUID studentId, Plans.Plan plan, String provider, String key, long amountMinor,
                                   String currency) {
-        jdbc.sql("""
+        return jdbc.sql("""
                 INSERT INTO payment_transaction (id, student_id, plan_id, plan_name, duration_months, provider,
                     idempotency_key, amount_minor, currency)
                 VALUES (:id, :student, :plan, :name, :months, :provider, :key, :amount, :currency)
@@ -155,8 +155,9 @@ public class Payments {
         return jdbc.sql("""
                 SELECT max(ends_at) FROM entitlement
                 WHERE student_id = :s AND revoked_at IS NULL AND ends_at > :now
-                """).param("s", studentId).param("now", now).query(OffsetDateTime.class).optional()
-                .filter(java.util.Objects::nonNull);
+                """).param("s", studentId).param("now", now)
+                .query((rs, n) -> rs.getObject(1, OffsetDateTime.class)).list().stream()
+                .filter(java.util.Objects::nonNull).findFirst();
     }
 
     public boolean premiumActiveAt(UUID studentId, OffsetDateTime at) {
