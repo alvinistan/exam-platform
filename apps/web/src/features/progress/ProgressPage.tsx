@@ -172,7 +172,24 @@ function ExamProgressView({ exam }: { exam: ExamPractised }) {
             <h3 id="topics-heading" className="text-xl font-bold">
               Topics
             </h3>
-            <Card className="overflow-x-auto">
+            {/* Phones: one card per topic. Wider screens: a table. */}
+            <ul className="flex flex-col gap-3 sm:hidden" aria-label="Your level and accuracy on each topic">
+              {p.topics.map((t) => (
+                <li key={t.topicId}>
+                  <Card className="flex flex-col gap-2.5 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="font-semibold">{t.title}</span>
+                      <Badge tone={statusTone[t.status]}>{statusLabels[t.status]}</Badge>
+                    </div>
+                    <LevelPill topic={t} />
+                    <p className="text-[14px] text-ink-2">
+                      Last 8 answers: <strong>{t.recentAccuracy}%</strong> · all: {t.correct} / {t.answered}
+                    </p>
+                  </Card>
+                </li>
+              ))}
+            </ul>
+            <Card className="hidden overflow-x-auto sm:block">
               <table className="w-full min-w-[640px] border-collapse text-[14.5px]">
                 <caption className="sr-only">Your level and accuracy on each topic</caption>
                 <thead>
