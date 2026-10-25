@@ -104,20 +104,21 @@ docker compose -f infra/compose/docker-compose.yml --env-file .env run --rm --no
 Store the printed JSON as `IDENTITY_JWT_SIGNING_KEYS` in the secret store. To rotate: put the new key first and keep
 the old one in the set for at least 15 minutes, then remove it.
 
-## Exam catalogue (Phase 6)
+## Setting up an exam (Phases 6–7.5)
 
-Administrators build exams from **Administration** in the web app, without code changes:
+Administrators build exams from **Administration → Exams** in the web app, without code changes. Each exam is set up
+in five guided steps (`/admin/exams/<id>/<step>`):
 
-1. **Categories**: create at least one (for example "Nursing").
-2. **Content library**: create subjects → modules → topics. A subject can be linked to several exams.
-3. **Exams → New exam**: title, address (`/exams/<slug>`), category, descriptions, linked subjects. It starts as a draft.
+1. **Details**: title, address (`/exams/<slug>`), category (add one on the spot), descriptions.
+2. **Subjects & topics**: Subject → Module → Topic, built in place. A subject can also be shared with another exam.
+3. **Questions**: write or import them, then mark them ready. Only ready questions reach students.
 4. **Modes**: turn on Practice, Mock exam and/or Guided practice and set their question counts (a mock exam needs a
    time limit).
-5. **Publish**: refused, with every reason listed, until the exam has an enabled mode, an active topic and enough
-   published questions for each enabled mode's minimum (FR-CAT-05).
+5. **Review & publish**: a checklist where every problem links to the step that fixes it; publish when it is ready.
 
-Renaming an exam's address keeps the old one redirecting, and no other exam can take it. Archived exams leave the
-catalogue and their page says "unavailable".
+**Create sample exam (O/L Science)** on the Exams page builds a complete draft exam with 24 ready questions, to see a
+finished setup or try it as a student. Renaming an exam's address keeps the old one redirecting. Archived exams leave
+the catalogue and their page says "unavailable"; **Restore to draft** brings them (and their address) back.
 
 Questions are written in **Administration → Questions** (Phase 7). For a quick local demo you can still add clearly
 labelled placeholder questions to a topic (local development only):
@@ -129,13 +130,13 @@ docker compose -f infra/compose/docker-compose.yml --env-file .env exec -T postg
 
 ## Question bank (Phase 7)
 
-- **Write**: Administration → Questions → New question. Rich text (bold, italic, lists), 4–5 options, single or
+- **Write**: from the exam's step 3, or Administration → Question bank → New question. Rich text (bold, italic, lists), 4–5 options, single or
   multiple correct answers, images with alt text, explanation, key points, definitions, difficulty, solving time,
   tags, Trial or Main bank. The preview shows the question as a student sees it, answering and in review.
-- **Workflow**: Draft → Reviewed → Published → Archived. A question can only be reviewed or published when it is
-  complete (FR-QB-04). Publishing freezes that version; editing a published question creates a new version, and
-  students keep the published one until the change is published.
-- **Import**: Questions → Import. Download the CSV or Excel template, fill one row per question, upload, check the
+- **Workflow**: Draft → (Reviewed, optional) → Ready (the API calls it PUBLISHED) → Archived. A question can only
+  be reviewed or marked ready when it is complete (FR-QB-04). Marking it ready freezes that version; editing it later
+  creates a new version, and students keep the ready one until the change is made live.
+- **Import**: from the exam's step 3, or Question bank → Import. Download the CSV or Excel template, fill one row per question, upload, check the
   row-by-row report, then confirm. Imported questions start as drafts.
 - **Bulk actions**: select questions in the list to change status, move topic or change bank (all or nothing).
 - **Images** are stored on the `catalogmedia` volume and shown through links that expire after about 10 minutes. Set
@@ -154,5 +155,5 @@ docker compose -f infra/compose/docker-compose.yml --env-file .env exec -T postg
 
 ## Status
 
-Phases 0–6 are complete. Phase 7 adds the question bank: authoring with versions, review and publishing, images,
-imports and bulk actions. See `CHANGELOG.md`.
+Phases 0–7 are complete. Phase 7.5 redesigns administration as a guided 5-step exam setup with a one-click sample
+exam. See `CHANGELOG.md`.

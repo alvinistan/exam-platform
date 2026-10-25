@@ -127,7 +127,7 @@ describe('question list', () => {
     const rows = within(table).getAllByRole('row');
     expect(rows[1]).toHaveTextContent('Question q1 text');
     expect(rows[1]).toHaveTextContent('Pharmacology › Drug calculations › Dosage by weight');
-    expect(rows[2]).toHaveTextContent('Unpublished changes');
+    expect(rows[2]).toHaveTextContent('Changes not live yet');
     expect(rows[2]).toHaveTextContent('Trial bank');
     expect(rows[2]).toHaveTextContent('Multi-answer');
     expect(await within(rows[1] as HTMLElement).findByText('Kani Admin')).toBeInTheDocument();
@@ -169,11 +169,12 @@ describe('question editor', () => {
     renderRoute('/admin/questions/q1');
     expect(await screen.findByText('Add 4 or 5 options (there are 3).')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark as reviewed' })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark as ready' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Make changes live' })).not.toBeInTheDocument();
     expect(await screen.findByText(/Created by Kani Admin/)).toBeInTheDocument();
   });
 
-  it('moves a complete draft to reviewed, then publishes after confirmation', async () => {
+  it('moves a complete draft to reviewed, then marks it ready after confirmation', async () => {
     let current = detail();
     const moves: unknown[] = [];
     mockApi({
@@ -189,11 +190,41 @@ describe('question editor', () => {
     renderRoute('/admin/questions/q1');
     await userEvent.click(await screen.findByRole('button', { name: 'Mark as reviewed' }));
     expect(await screen.findByText('Moved to reviewed.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Publish' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Publish this question?' });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Publish' }));
-    expect(await screen.findByText('Version 1 is published.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Mark as ready' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Mark this question as ready?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Mark as ready' }));
+    expect(await screen.findByText('Version 1 is ready for students.')).toBeInTheDocument();
     expect(moves).toEqual([{ to: 'REVIEWED' }, { to: 'PUBLISHED' }]);
+  });
+
+  it('marks a complete draft ready directly, without review', async () => {
+    const moves: unknown[] = [];
+    mockApi({
+      ...base,
+      'GET /api/admin/catalog/questions/q1': () => jsonResponse(detail()),
+      'POST /api/admin/catalog/questions/q1/transitions': ({ body }) => {
+        moves.push(body);
+        return jsonResponse(detail({ status: 'PUBLISHED', publishedVersionNo: 1, version: 2 }));
+      },
+    });
+    renderRoute('/admin/questions/q1');
+    await userEvent.click(await screen.findByRole('button', { name: 'Mark as ready' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Mark this question as ready?' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Mark as ready' }));
+    expect(await screen.findByText('Version 1 is ready for students.')).toBeInTheDocument();
+    expect(moves).toEqual([{ to: 'PUBLISHED' }]);
+  });
+
+  it('leads back to the exam setup when opened from it', async () => {
+    mockApi({ ...base, 'GET /api/admin/catalog/questions/q1': () => jsonResponse(detail()) });
+    renderRoute('/admin/questions/q1?returnTo=%2Fadmin%2Fexams%2Fexam-1%2Fquestions');
+    expect(await screen.findByRole('link', { name: 'Back to exam setup' })).toHaveAttribute('href', '/admin/exams/exam-1/questions');
+  });
+
+  it('ignores a return address outside the exam setup', async () => {
+    mockApi({ ...base, 'GET /api/admin/catalog/questions/q1': () => jsonResponse(detail()) });
+    renderRoute('/admin/questions/q1?returnTo=https%3A%2F%2Fevil.example');
+    expect(await screen.findByRole('link', { name: 'All questions' })).toHaveAttribute('href', '/admin/questions');
   });
 
   it('explains when a published exam still needs the question', async () => {
@@ -287,7 +318,7 @@ describe('question editor', () => {
     await userEvent.selectOptions(screen.getByLabelText('Topic'), 't2');
     await userEvent.click(screen.getByLabelText('Trial bank', { exact: false }));
     await userEvent.click(screen.getByRole('button', { name: 'Create draft' }));
-    expect(await screen.findByText('Draft saved.')).toBeInTheDocument();
+    expect(await screen.findByText('Draft saved. Mark it ready when it’s complete.')).toBeInTheDocument();
     expect(posted[0]).toMatchObject({ topicId: 't2', bank: 'TRIAL', answerType: 'SINGLE', difficulty: 'MEDIUM', estSeconds: 60 });
     expect((posted[0] as { options: unknown[] }).options).toHaveLength(4);
   });

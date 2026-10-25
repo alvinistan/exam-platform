@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -68,7 +68,8 @@ export function ModeSettingsForm({ examId, settings, publishedQuestions }: Props
   const queryClient = useQueryClient();
   const isMock = settings.mode === 'MOCK';
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: toValues(settings) });
-  const { register, handleSubmit, formState, reset } = form;
+  const { register, handleSubmit, formState, reset, control } = form;
+  const minCount = useWatch({ control, name: 'minCount' }) || 0;
   const errors = formState.errors;
 
   const save = useMutation({
@@ -121,8 +122,10 @@ export function ModeSettingsForm({ examId, settings, publishedQuestions }: Props
             <TextField label="Default" type="number" min={1} max={500} error={errors.defaultCount?.message} {...register('defaultCount', { valueAsNumber: true })} />
             <TextField label="Maximum" type="number" min={1} max={500} error={errors.maxCount?.message} {...register('maxCount', { valueAsNumber: true })} />
           </div>
-          <p className="text-[13px] text-muted">
-            Publishing needs at least the minimum in published questions. This exam has {publishedQuestions} now.
+          <p className={publishedQuestions >= minCount ? 'text-[13px] text-success-ink' : 'text-[13px] text-warning-ink'}>
+            {publishedQuestions >= minCount
+              ? `Enough questions: ${minCount} needed, ${publishedQuestions} ready.`
+              : `Needs at least ${minCount} ready questions; this exam has ${publishedQuestions}.`}
           </p>
         </fieldset>
         {isMock ? (

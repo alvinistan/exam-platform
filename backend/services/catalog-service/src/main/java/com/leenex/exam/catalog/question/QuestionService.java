@@ -164,7 +164,10 @@ public class QuestionService {
         return get(id);
     }
 
-    /** The workflow (FR-QB-03): Draft → Reviewed → Published → Archived, with the moves back an editor needs. */
+    /**
+     * The workflow (FR-QB-03): Draft → (Reviewed) → Published → Archived, with the moves back an editor needs.
+     * Review is an optional step for teams; the web app calls a published question "Ready".
+     */
     @Transactional
     public QuestionDetail transition(UUID actor, UUID id, String to) {
         Bank bank = questions.bankOf(id).orElseThrow(QuestionService::notFound);
@@ -174,7 +177,9 @@ public class QuestionService {
         boolean allowed = switch (to) {
             case "REVIEWED" -> "DRAFT".equals(from);
             case "DRAFT" -> "REVIEWED".equals(from) || "ARCHIVED".equals(from);
-            case "PUBLISHED" -> "REVIEWED".equals(from) || ("PUBLISHED".equals(from) && !current.frozen());
+            // Review is optional: a complete draft can be marked ready (published) directly.
+            case "PUBLISHED" -> "DRAFT".equals(from) || "REVIEWED".equals(from)
+                    || ("PUBLISHED".equals(from) && !current.frozen());
             case "ARCHIVED" -> !"ARCHIVED".equals(from);
             default -> false;
         };

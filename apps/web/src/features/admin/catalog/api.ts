@@ -5,9 +5,18 @@ import type { Mode, PageMeta } from '@/features/exams/api';
 export type ExamStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
 export type ContentStatus = 'ACTIVE' | 'ARCHIVED';
 
+/** The guided setup's steps, in order. The server tags every publishing problem with the step that fixes it. */
+export type SetupStep = 'DETAILS' | 'STRUCTURE' | 'QUESTIONS' | 'MODES';
+
+export interface SetupIssue {
+  step: SetupStep;
+  message: string;
+}
+
 export interface Readiness {
   ready: boolean;
   blockers: string[];
+  issues: SetupIssue[];
 }
 
 /** contracts/openapi/catalog-service.yaml → AdminExam */
@@ -28,6 +37,9 @@ export interface AdminExam {
   trialQuestionCount: number;
   topicCount: number;
   publishReadiness: Readiness;
+  /** Main-bank questions in the exam's topics that aren't ready yet (draft or reviewed). */
+  draftQuestionCount: number;
+  subjectCount: number;
 }
 
 export interface ModeSettings {
@@ -198,6 +210,19 @@ export const publishExam = (id: string) =>
 export const archiveExam = (id: string) =>
   apiFetch<AdminExamDetail>(`/admin/catalog/exams/${id}/archive`, { method: 'POST' });
 
+export const restoreExam = (id: string) =>
+  apiFetch<AdminExamDetail>(`/admin/catalog/exams/${id}/restore`, { method: 'POST' });
+
+/** Adds an existing subject ({ subjectId }) or a new one ({ title }) to the exam. */
+export const linkSubject = (examId: string, input: { subjectId: string } | { title: string }) =>
+  apiFetch<AdminExamDetail>(`/admin/catalog/exams/${examId}/subjects`, { method: 'POST', json: input });
+
+export const unlinkSubject = (examId: string, subjectId: string) =>
+  apiFetch<AdminExamDetail>(`/admin/catalog/exams/${examId}/subjects/${subjectId}`, { method: 'DELETE' });
+
+export const createSampleExam = () =>
+  apiFetch<AdminExamDetail>('/admin/catalog/sample-exams/ol-science', { method: 'POST' });
+
 export const configureMode = (examId: string, mode: Mode, input: ModeInput) =>
   apiFetch<ModeSettings>(`/admin/catalog/exams/${examId}/modes/${mode}`, { method: 'PUT', json: input });
 
@@ -241,11 +266,16 @@ export const updateTopic = (
   input: { title: string; displayOrder: number; status?: ContentStatus; prerequisiteTopicIds?: string[] },
 ) => apiFetch<TopicAdmin>(`/admin/catalog/topics/${id}`, { method: 'PUT', json: input, headers: ifMatch(version) });
 
-/** Lower-case, hyphenated address made from a title ("IELTS Academic" → "ielts-academic"). */
+/**
+ * Lower-case, hyphenated address made from a title ("IELTS Academic" → "ielts-academic"). Abbreviation marks are
+ * dropped rather than turned into hyphens: "O/L" → "ol", "G.C.E." → "gce", "Writer's" → "writers".
+ */
 export function slugify(text: string): string {
   return text
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
+    .replace(/(?<=[A-Za-z0-9])[./'’](?=[A-Za-z0-9])/g, '')
+    .replace(/(?<=[A-Za-z0-9])\.(?=\s|$)/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')

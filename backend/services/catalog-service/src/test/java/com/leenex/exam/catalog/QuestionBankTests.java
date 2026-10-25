@@ -91,10 +91,18 @@ class QuestionBankTests extends CatalogTestSupport {
     }
 
     @Test
+    void aCompleteDraftCanBeMarkedReadyWithoutReview() throws Exception {
+        Content content = createContent();
+        UUID id = createQuestion(content.topicId(), "MAIN", "Straight to ready");
+        MockHttpServletResponse published = expect(transition(id, "PUBLISHED"), 200);
+        assertThat((String) read(published, "$.status")).isEqualTo("PUBLISHED");
+        assertThat((Integer) read(published, "$.publishedVersionNo")).isEqualTo(1);
+    }
+
+    @Test
     void publishingFreezesAVersionAndLaterEditsStartANewOne() throws Exception {
         Content content = createContent();
         UUID id = createQuestion(content.topicId(), "MAIN", "Original wording");
-        expect(transition(id, "PUBLISHED"), 409); // must be reviewed first
         expect(transition(id, "REVIEWED"), 200);
         MockHttpServletResponse published = expect(transition(id, "PUBLISHED"), 200);
         assertThat((Integer) read(published, "$.publishedVersionNo")).isEqualTo(1);

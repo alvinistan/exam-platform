@@ -138,6 +138,8 @@ function formField(path: string): FieldPath<FormValues> | null {
 interface Props {
   question: QuestionDetail | undefined;
   initialTopicId?: string;
+  /** When opened from an exam's setup: offer only that exam's subjects. */
+  limitToSubjectIds?: string[] | undefined;
   onSaved: (q: QuestionDetail, created: boolean) => void;
 }
 
@@ -160,7 +162,7 @@ export function QuestionForm(props: Props) {
   return <Editor {...props} />;
 }
 
-function Editor({ question, initialTopicId, onSaved }: Props) {
+function Editor({ question, initialTopicId, limitToSubjectIds, onSaved }: Props) {
   const queryClient = useQueryClient();
   const isNew = question === undefined;
   const library = useLibrary();
@@ -212,8 +214,11 @@ function Editor({ question, initialTopicId, onSaved }: Props) {
     }
   };
 
+  const holdsCurrent = (s: { modules: { topics: { id: string }[] }[] }) =>
+    s.modules.some((m) => m.topics.some((t) => t.id === values.topicId));
   const topicGroups = (library.data ?? [])
-    .filter((s) => s.status === 'ACTIVE' || s.modules.some((m) => m.topics.some((t) => t.id === values.topicId)))
+    .filter((s) => !limitToSubjectIds || limitToSubjectIds.includes(s.id) || holdsCurrent(s))
+    .filter((s) => s.status === 'ACTIVE' || holdsCurrent(s))
     .flatMap((s) =>
       s.modules.map((m) => ({
         label: `${s.title} › ${m.title}`,

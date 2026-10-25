@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CircleCheck, Download, FileUp } from 'lucide-react';
 import { Alert, Button, Card, SelectField } from '@/components/ui';
 import { useAdminExams } from '@/features/admin/catalog/api';
+import { safeReturnTo } from '@/features/admin/setup/returnTo';
 import { ApiError } from '@/lib/api/problem';
 import { getAccessToken } from '@/lib/auth/session';
 import { confirmImport, questionKeys, uploadImport, type Bank, type ImportReport } from './api';
@@ -12,7 +13,9 @@ import { confirmImport, questionKeys, uploadImport, type Bank, type ImportReport
 export function ImportPage() {
   const queryClient = useQueryClient();
   const exams = useAdminExams({ q: '', status: '', categoryId: '', page: 0 });
-  const [examId, setExamId] = useState('');
+  const [params] = useSearchParams();
+  const returnTo = safeReturnTo(params.get('returnTo'));
+  const [examId, setExamId] = useState(params.get('examId') ?? '');
   const [bank, setBank] = useState<Bank>('MAIN');
   const [file, setFile] = useState<File | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -50,8 +53,8 @@ export function ImportPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Link to="/admin/questions" className="inline-flex items-center gap-1.5 text-[14.5px] font-semibold">
-          <ArrowLeft aria-hidden="true" className="size-4" /> All questions
+        <Link to={returnTo ?? '/admin/questions'} className="inline-flex items-center gap-1.5 text-[14.5px] font-semibold">
+          <ArrowLeft aria-hidden="true" className="size-4" /> {returnTo ? 'Back to exam setup' : 'All questions'}
         </Link>
         <h1 className="text-2xl font-extrabold tracking-tight">Import questions</h1>
         <p className="text-muted">
@@ -167,7 +170,15 @@ export function ImportPage() {
           {confirmed ? (
             <Alert tone="success" title={`${report.createdQuestionIds.length} draft question(s) created.`}>
               <p>
-                <Link to="/admin/questions">Open the question list</Link> to review and publish them.
+                {returnTo ? (
+                  <>
+                    <Link to={returnTo}>Back to the exam setup</Link> to check them and mark them ready.
+                  </>
+                ) : (
+                  <>
+                    <Link to="/admin/questions">Open the question list</Link> to check them and mark them ready.
+                  </>
+                )}
               </p>
             </Alert>
           ) : report.validRows > 0 ? (

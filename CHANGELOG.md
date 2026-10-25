@@ -1,5 +1,25 @@
 # Changelog
 
+## Phase 7.5 — Guided exam setup (admin redesign)
+
+- web: an exam is now set up in 5 guided steps on one page — Details, Subjects & topics, Questions, Modes, Review &
+  publish — with a step bar that shows what is done and what needs attention, worked out from server counts.
+- web: the exams list shows each exam's setup progress and its next step ("Continue setup"); live exams show their
+  ready questions and modes; archived exams can be restored from the list.
+- web: categories can be added from step 1; subjects, modules and topics are created, renamed, archived and restored
+  inside step 2; step 3 marks every draft ready in one click and lists any question that still needs fixing.
+- web: every publishing problem links to the step that fixes it. The question editor and import page lead back to
+  the exam's setup. Admin navigation is Exams, Question bank, Categories, Users.
+- Questions: "Published" is shown as "Ready"; review is optional (Draft → Ready is allowed).
+- catalog-service: `POST /exams/{id}/restore` (archived → draft, address kept, `ExamRestored` event);
+  `POST /exams/{id}/subjects` (link an existing subject or create one by title) and `DELETE /exams/{id}/subjects/{subjectId}`;
+  `draftQuestionCount` and `subjectCount` on admin exam responses; readiness `issues` tagged with the setup step.
+- catalog-service: `POST /sample-exams/ol-science` builds a clearly labelled sample exam (G.C.E. O/L Science: 3 modules,
+  6 topics, 24 ready questions, Practice and Mock exam on) as a draft.
+- Fixed: archiving an exam could not be undone, and its address stayed blocked for good.
+- Docker: services get 3 minutes to start before a health check counts, so a first `docker compose up` no longer
+  gives up while migrations run.
+
 ## Phase 7 — Question bank and content management
 
 - catalog-service: questions in the Trial and Main banks with rich text (allow-list sanitised), 4–5 options, single

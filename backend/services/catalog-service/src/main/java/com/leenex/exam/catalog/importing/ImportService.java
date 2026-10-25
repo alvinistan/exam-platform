@@ -162,6 +162,24 @@ public class ImportService {
                 .optional().orElseThrow(() -> new ApiException(ProblemCode.NOT_FOUND, "Import not found."));
     }
 
+    /**
+     * Creates Draft questions straight from rows the platform ships with (the sample exam). Every row must be valid;
+     * a bad row is a packaging bug, not something an administrator can fix.
+     */
+    @Transactional
+    public List<UUID> createFromRows(UUID actor, UUID examId, Bank bank, List<ImportFile.Row> rows) {
+        Map<String, UUID> topics = topicsOf(examId);
+        List<Input> inputs = new ArrayList<>();
+        List<RowError> errors = new ArrayList<>();
+        for (ImportFile.Row row : rows) {
+            inputs.add(parse(row, topics, errors));
+        }
+        if (!errors.isEmpty()) {
+            throw new IllegalStateException("Built-in question rows are invalid: " + errors);
+        }
+        return questions.createAll(actor, bank, inputs);
+    }
+
     // --- rows -------------------------------------------------------------------------------------------------------
 
     /** Active topics of the exam, keyed by "subject|module|topic" titles (case and spacing ignored). */

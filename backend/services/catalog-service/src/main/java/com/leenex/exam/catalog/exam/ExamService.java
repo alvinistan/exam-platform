@@ -1,5 +1,6 @@
 package com.leenex.exam.catalog.exam;
 
+import com.leenex.exam.catalog.content.ContentService;
 import com.leenex.exam.catalog.exam.ExamRepository.ContentCounts;
 import com.leenex.exam.catalog.exam.ExamRepository.ExamFields;
 import com.leenex.exam.catalog.exam.ExamRepository.SearchResult;
@@ -45,9 +46,11 @@ public class ExamService {
     private final AuditLog audit;
     private final Outbox outbox;
     private final JdbcClient jdbc;
+    private final ContentService content;
 
     public ExamService(ExamRepository exams, ModeRepository modes, PublishReadiness readiness, AuditLog audit,
-                       Outbox outbox, JdbcClient jdbc) {
+                       Outbox outbox, JdbcClient jdbc, ContentService content) {
+        this.content = content;
         this.exams = exams;
         this.modes = modes;
         this.readiness = readiness;
@@ -150,7 +153,7 @@ public class ExamService {
         Readiness check = readiness.evaluate(exam);
         if (!check.ready()) {
             throw new ApiException(ProblemCode.PUBLISH_BLOCKED, "This exam can't be published yet.",
-                    Map.of("blockers", check.blockers()));
+                    Map.of("blockers", check.blockers(), "issues", check.issues()));
         }
         int order = exam.displayOrder() != null ? exam.displayOrder() : exams.nextDisplayOrder();
         exams.setStatus(id, "PUBLISHED", order, actorId);
@@ -172,6 +175,59 @@ public class ExamService {
         audit.record(actorId, "EXAM_ARCHIVED", "EXAM", id, Map.of("previousStatus", exam.status()));
         outbox.publish("Exam", id, "ExamArchived", eventPayload(after));
         return adminDetail(after);
+    }
+
+    /** Brings an archived exam back as a draft, so it can be fixed and published again. Its address comes back too. */
+    @Transactional
+    public AdminExamDetail restore(UUID actorId, UUID id) {
+        ExamRow exam = exams.lock(id).orElseThrow(ExamService::notFound);
+        if (!"ARCHIVED".equals(exam.status())) {
+            throw new ApiException(ProblemCode.CONFLICT, "Only an archived exam can be restored.");
+        }
+        exams.setStatus(id, "DRAFT", exam.displayOrder(), actorId);
+        ExamRow after = find(id);
+        audit.record(actorId, "EXAM_RESTORED", "EXAM", id, Map.of("status", "DRAFT"));
+        outbox.publish("Exam", id, "ExamRestored", eventPayload(after));
+        return adminDetail(after);
+    }
+
+    /**
+     * Links a subject to the exam during setup: an existing one ({@code subjectId}) or a new one created here
+     * ({@code title}). Linking never makes a published exam unpublishable, so no readiness check is needed.
+     */
+    @Transactional
+    public AdminExamDetail linkSubject(UUID actorId, UUID examId, UUID subjectId, String newTitle) {
+        exams.lock(examId).orElseThrow(ExamService::notFound);
+        UUID id = subjectId;
+        if (id == null) {
+            id = content.createSubject(actorId, newTitle, null, null).id();
+        } else if (exams.countActiveSubjects(List.of(id)) != 1) {
+            throw Requests.invalid("subjectId", "subject must exist and be active");
+        }
+        List<UUID> linked = new ArrayList<>(exams.subjectIds(examId));
+        if (linked.contains(id)) {
+            throw new ApiException(ProblemCode.CONFLICT, "This subject is already part of the exam.");
+        }
+        linked.add(id);
+        exams.replaceSubjects(examId, linked);
+        exams.touch(examId, actorId);
+        audit.record(actorId, "EXAM_SUBJECT_LINKED", "EXAM", examId, Map.of("subjectId", id.toString()));
+        return adminDetail(find(examId));
+    }
+
+    /** Removes a subject from the exam (the subject itself stays in the library). */
+    @Transactional
+    public AdminExamDetail unlinkSubject(UUID actorId, UUID examId, UUID subjectId) {
+        exams.lock(examId).orElseThrow(ExamService::notFound);
+        List<UUID> linked = new ArrayList<>(exams.subjectIds(examId));
+        if (!linked.remove(subjectId)) {
+            throw new ApiException(ProblemCode.NOT_FOUND, "This subject isn't part of the exam.");
+        }
+        exams.replaceSubjects(examId, linked);
+        exams.touch(examId, actorId);
+        readiness.requireStillPublishable(List.of(examId));
+        audit.record(actorId, "EXAM_SUBJECT_UNLINKED", "EXAM", examId, Map.of("subjectId", subjectId.toString()));
+        return adminDetail(find(examId));
     }
 
     // --- public catalogue -------------------------------------------------------------------------------------------
@@ -251,7 +307,7 @@ public class ExamService {
         return new AdminExam(e.id(), e.title(), e.slug(), e.categoryId(), e.shortDescription(), null, e.featured(),
                 e.displayOrder(), modes.enabled(e.id()).stream().map(ModeSettings::mode).toList(), e.status(),
                 e.publishedAt(), e.updatedAt(), e.version(), counts.publishedMain(), counts.publishedTrial(),
-                counts.topics(), readiness.evaluate(e, counts));
+                counts.topics(), readiness.evaluate(e, counts), counts.draftMain(), counts.subjects());
     }
 
     private AdminExamDetail adminDetail(ExamRow e) {
@@ -260,7 +316,8 @@ public class ExamService {
         return new AdminExamDetail(e.id(), e.title(), e.slug(), e.categoryId(), e.shortDescription(), null,
                 e.featured(), e.displayOrder(), all.stream().filter(ModeSettings::enabled).map(ModeSettings::mode).toList(),
                 e.status(), e.publishedAt(), e.updatedAt(), e.version(), counts.publishedMain(), counts.publishedTrial(),
-                counts.topics(), readiness.evaluate(e, counts), e.instructions(), e.seoTitle(), e.seoDescription(),
+                counts.topics(), readiness.evaluate(e, counts), counts.draftMain(), counts.subjects(), e.instructions(),
+                e.seoTitle(), e.seoDescription(),
                 exams.subjectIds(e.id()), all);
     }
 
