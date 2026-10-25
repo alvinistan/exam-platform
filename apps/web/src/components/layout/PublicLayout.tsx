@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { Outlet } from 'react-router';
+import { NavLink, Outlet } from 'react-router';
 import { AccountMenu } from './AccountMenu';
 import { Brand } from './Brand';
 import { PageLoading } from './PageLoading';
@@ -15,7 +15,19 @@ export function PublicLayout() {
       </a>
       <header className="border-b border-border bg-surface">
         <div className="mx-auto flex min-h-[68px] max-w-[1200px] items-center justify-between gap-4 px-4 sm:px-8">
-          <Brand />
+          <div className="flex items-center gap-6">
+            <Brand />
+            <nav aria-label="Main">
+              <NavLink
+                to="/exams"
+                className={({ isActive }) =>
+                  `rounded-sm px-2 py-2 text-[15px] font-semibold no-underline ${isActive ? 'text-primary' : 'text-ink-2 hover:text-ink'}`
+                }
+              >
+                Exams
+              </NavLink>
+            </nav>
+          </div>
           <AccountMenu />
         </div>
       </header>

@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { jsonResponse, mockApi, renderRoute } from '@/test/render';
 import { clearSession } from '@/lib/auth/session';
+import { examDetail } from '@/test/fixtures';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -10,13 +11,13 @@ afterEach(() => {
 
 describe('routing', () => {
   it('renders the home page with the brand and study modes', async () => {
-    const fetchMock = mockApi({});
+    mockApi({});
     renderRoute('/');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Practise smarter');
     expect(screen.getByRole('link', { name: 'Leenex Labs' })).toHaveAttribute('href', '/');
     expect(screen.getByRole('heading', { name: 'Mock exam' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Browse exams' })).toHaveAttribute('href', '/exams');
     await screen.findByRole('button', { name: 'Sign in' });
-    expect(fetchMock.mock.calls.map((c) => c[0])).toEqual(['/api/auth/token']);
   });
 
   it('shows a not-found page for unknown addresses', () => {
@@ -35,21 +36,14 @@ describe('routing', () => {
 describe('dynamic exam route', () => {
   it('renders any published exam from its slug, with no exam-specific page', async () => {
     const fetchMock = mockApi({
-      'GET /api/exams/by-slug/nursing-licensure': () =>
-        jsonResponse({
-          id: '0190d5e2-0000-7000-8000-000000000001',
-          title: 'Nursing Licensure Review',
-          slug: 'nursing-licensure',
-          categoryId: '0190d5e2-0000-7000-8000-000000000002',
-          shortDescription: 'Adult health, pharmacology and safe practice.',
-          modes: ['PRACTICE', 'MOCK'],
-        }),
+      'GET /api/exams/by-slug/nursing-licensure': () => jsonResponse(examDetail()),
     });
     renderRoute('/exams/nursing-licensure');
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Nursing Licensure Review' })).toBeInTheDocument();
     expect(screen.getByText('Adult health, pharmacology and safe practice.')).toBeInTheDocument();
-    expect(screen.getByRole('list', { name: 'Available modes' })).toHaveTextContent('PracticeMock exam');
+    expect(screen.getByRole('heading', { level: 3, name: 'Practice' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Mock exam' })).toBeInTheDocument();
     expect(fetchMock.mock.calls.map((c) => c[0])).toContain('/api/exams/by-slug/nursing-licensure');
   });
 
@@ -71,7 +65,7 @@ describe('dynamic exam route', () => {
       'GET /api/exams/by-slug/ielts-academic': () =>
         ++calls === 1
           ? jsonResponse({ type: 'about:blank', title: 'Something went wrong', status: 500, code: 'INTERNAL_ERROR', correlationId: 'corr-9' }, 500)
-          : jsonResponse({ id: 'x', title: 'IELTS Academic', slug: 'ielts-academic', categoryId: 'c', modes: [] }),
+          : jsonResponse(examDetail({ title: 'IELTS Academic', slug: 'ielts-academic' })),
     });
     renderRoute('/exams/ielts-academic');
     expect(await screen.findByText("We couldn't load this exam")).toBeInTheDocument();

@@ -52,9 +52,14 @@ components:
           description: >-
             Known codes: VALIDATION_FAILED, NOT_FOUND, CONFLICT, UNAUTHENTICATED, FORBIDDEN, ACCOUNT_SUSPENDED,
             SUBSCRIPTION_REQUIRED, SUBSCRIPTION_EXPIRED, PAYMENT_PENDING, FREE_ALLOWANCE_USED, MODE_DISABLED,
-            ATTEMPT_EXPIRED, ATTEMPT_FINISHED, INSUFFICIENT_QUESTIONS, SLUG_TAKEN, PUBLISH_BLOCKED, RATE_LIMITED.
+            ATTEMPT_EXPIRED, ATTEMPT_FINISHED, INSUFFICIENT_QUESTIONS, EXAM_UNAVAILABLE, SLUG_TAKEN, PUBLISH_BLOCKED,
+            RATE_LIMITED, METHOD_NOT_ALLOWED, UNSUPPORTED_MEDIA_TYPE, INTERNAL_ERROR.
         detail: { type: string }
         correlationId: { type: string }
+        blockers:
+          type: array
+          description: With PUBLISH_BLOCKED, every reason the exam can't be (or stay) published.
+          items: { type: string }
         errors:
           type: array
           description: Field-level validation errors.

@@ -1,5 +1,26 @@
 # Changelog
 
+## Phase 6 — Configurable exam catalogue
+
+- catalog-service: categories (create, edit, archive/restore; archive refused while exams are published); content
+  library of subjects → modules → topics shared across exams, with archive and topic prerequisites (no loops);
+  exams with slug, descriptions, instructions, SEO fields, catalogue position, featured flag and linked subjects;
+  per-mode settings with cross-field validation (mock exams need a time limit and after-submit feedback).
+- Publishing rules (FR-CAT-05): refused with a `blockers` list until there is an enabled mode, an active topic, enough
+  published Main-bank questions for every enabled mode's minimum and a free catalogue position. Changes that would
+  break a published exam (disabling its last mode, archiving its topics, unlinking subjects) are refused too.
+- Slugs: renamed addresses answer 301 to the new one and can never be reused by another exam (FR-CAT-06).
+- Public API: `/api/categories`, `/api/exams` (search, category, featured, paging) and `/api/exams/by-slug/{slug}`
+  with the content tree and public mode settings; never question content. Draft or archived exams answer
+  `EXAM_UNAVAILABLE`.
+- Optimistic locking (If-Match/ETag) on every edit; audit rows for every change; `ExamPublished`, `ExamUpdated` and
+  `ExamArchived` events in the outbox, readable by services at `/internal/events`.
+- platform-web: problem responses can carry extra members (`blockers`); new code `EXAM_UNAVAILABLE`.
+- web: catalogue page (search, category filter, paging in the URL), exam page (modes, instructions, what's covered,
+  unavailable and moved addresses), featured exams and categories on the home page, administration screens for
+  exams, categories and the content library.
+- `infra/dev-data/demo-questions.sql` adds labelled demo questions for local publishing (development only).
+
 ## Phase 5 — Google sign-in and roles
 
 - identity-service: Google OpenID Connect with PKCE, nonce and browser-bound state; ES256 access tokens (15 min)

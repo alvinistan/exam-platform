@@ -14,6 +14,7 @@ export type ProblemCode =
   | 'ATTEMPT_EXPIRED'
   | 'ATTEMPT_FINISHED'
   | 'INSUFFICIENT_QUESTIONS'
+  | 'EXAM_UNAVAILABLE'
   | 'SLUG_TAKEN'
   | 'PUBLISH_BLOCKED'
   | 'RATE_LIMITED'
@@ -29,6 +30,8 @@ export interface Problem {
   detail?: string;
   correlationId?: string;
   errors?: { field: string; message: string }[];
+  /** With PUBLISH_BLOCKED: every reason an exam can't be (or stay) published. */
+  blockers?: string[];
 }
 
 /** Thrown by the API client for any non-2xx response, and for network failures (status 0). */

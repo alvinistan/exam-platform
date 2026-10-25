@@ -104,6 +104,29 @@ docker compose -f infra/compose/docker-compose.yml --env-file .env run --rm --no
 Store the printed JSON as `IDENTITY_JWT_SIGNING_KEYS` in the secret store. To rotate: put the new key first and keep
 the old one in the set for at least 15 minutes, then remove it.
 
+## Exam catalogue (Phase 6)
+
+Administrators build exams from **Administration** in the web app, without code changes:
+
+1. **Categories**: create at least one (for example "Nursing").
+2. **Content library**: create subjects → modules → topics. A subject can be linked to several exams.
+3. **Exams → New exam**: title, address (`/exams/<slug>`), category, descriptions, linked subjects. It starts as a draft.
+4. **Modes**: turn on Practice, Mock exam and/or Guided practice and set their question counts (a mock exam needs a
+   time limit).
+5. **Publish**: refused, with every reason listed, until the exam has an enabled mode, an active topic and enough
+   published questions for each enabled mode's minimum (FR-CAT-05).
+
+Renaming an exam's address keeps the old one redirecting, and no other exam can take it. Archived exams leave the
+catalogue and their page says "unavailable".
+
+Question authoring arrives in the next phase. To publish an exam locally before then, add clearly labelled demo
+questions to a topic (local development only):
+
+```bash
+docker compose -f infra/compose/docker-compose.yml --env-file .env exec -T postgres \
+  psql -U postgres -d catalog -v topic_title="Dosage by weight" -v how_many=10 < infra/dev-data/demo-questions.sql
+```
+
 ## Conventions
 
 - **Errors** are RFC 9457 problem responses with a stable `code` (see `contracts/openapi/common.yaml`).
@@ -117,5 +140,5 @@ the old one in the set for at least 15 minutes, then remove it.
 
 ## Status
 
-Phases 0–4 are complete. Phase 5 adds Google sign-in, roles, account management and user administration.
-See `CHANGELOG.md`.
+Phases 0–5 are complete. Phase 6 adds the configurable exam catalogue: categories, the content library, exams with
+mode settings and publishing rules, the public catalogue and exam pages. See `CHANGELOG.md`.

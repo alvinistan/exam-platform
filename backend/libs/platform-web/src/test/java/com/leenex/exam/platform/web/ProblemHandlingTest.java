@@ -46,6 +46,14 @@ class ProblemHandlingTest {
     }
 
     @Test
+    void extraPropertiesAreAddedToTheProblem() throws Exception {
+        mvc.perform(get("/publish-blocked"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PUBLISH_BLOCKED"))
+                .andExpect(jsonPath("$.blockers[0]").value("Enable at least one mode."));
+    }
+
+    @Test
     void validationErrorsListEachField() throws Exception {
         mvc.perform(post("/items").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"\"}"))
                 .andExpect(status().isBadRequest())
@@ -98,6 +106,12 @@ class ProblemHandlingTest {
         @GetMapping("/slug-taken")
         String slugTaken() {
             throw new ApiException(ProblemCode.SLUG_TAKEN, "ielts-academic is already used by another exam.");
+        }
+
+        @GetMapping("/publish-blocked")
+        String publishBlocked() {
+            throw new ApiException(ProblemCode.PUBLISH_BLOCKED, "Not ready.",
+                    java.util.Map.of("blockers", java.util.List.of("Enable at least one mode.")));
         }
 
         @PostMapping("/items")

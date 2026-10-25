@@ -21,6 +21,7 @@ public enum ProblemCode {
     ATTEMPT_EXPIRED(HttpStatus.CONFLICT, "Attempt expired"),
     ATTEMPT_FINISHED(HttpStatus.CONFLICT, "Attempt already finished"),
     INSUFFICIENT_QUESTIONS(HttpStatus.UNPROCESSABLE_CONTENT, "Not enough questions"),
+    EXAM_UNAVAILABLE(HttpStatus.NOT_FOUND, "Exam unavailable"),
     SLUG_TAKEN(HttpStatus.CONFLICT, "URL already in use"),
     PUBLISH_BLOCKED(HttpStatus.CONFLICT, "Cannot publish yet"),
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Too many requests"),

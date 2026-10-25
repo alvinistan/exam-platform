@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router';
-import { Users } from 'lucide-react';
+import { FileText, FolderTree, Library, Users } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { PageLoading } from './PageLoading';
 
@@ -18,7 +18,16 @@ export function AdminLayout() {
     <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-4 py-8 sm:px-8 md:flex-row">
       <aside className="md:w-56 md:flex-none">
         <p className="px-3 pb-2 text-xs font-bold tracking-wider text-subtle uppercase">Administration</p>
-        <nav aria-label="Administration" className="flex flex-row gap-1 md:flex-col">
+        <nav aria-label="Administration" className="flex flex-row flex-wrap gap-1 md:flex-col">
+          <NavLink to="/admin/exams" className={linkClass}>
+            <FileText aria-hidden="true" className="size-4" /> Exams
+          </NavLink>
+          <NavLink to="/admin/categories" className={linkClass}>
+            <FolderTree aria-hidden="true" className="size-4" /> Categories
+          </NavLink>
+          <NavLink to="/admin/content" className={linkClass}>
+            <Library aria-hidden="true" className="size-4" /> Content library
+          </NavLink>
           <NavLink to="/admin/users" className={linkClass}>
             <Users aria-hidden="true" className="size-4" /> Users
           </NavLink>
