@@ -18,3 +18,11 @@ Client secrets per service in the secret store. A compromised user token can nev
 ## Alternatives considered
 
 Network trust only (rejected: no defence in depth); mTLS (deferred until Kubernetes, where a service mesh makes it cheap).
+
+## Implementation note (Phase 8, 25 Oct 2026)
+
+identity-service serves `POST /oauth2/token` (client_credentials only; HTTP Basic or form credentials). Clients are
+listed under `identity.service-clients` with their scopes; a client without a secret is switched off. Tokens last
+5 minutes. subscription-service is the first client (scope catalog.internal); assessment-service is configured for
+catalog.internal and billing.access ahead of Phase 9. The 2 s timeouts apply; the retry and circuit breaker arrive
+with the first synchronous call on a student's path (Phase 9).

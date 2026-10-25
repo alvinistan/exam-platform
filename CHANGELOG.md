@@ -1,5 +1,26 @@
 # Changelog
 
+## Phase 8 — Freemium access and entitlements
+
+- identity-service: OAuth 2.0 client-credentials grant at `POST /oauth2/token` for backend services (ADR-005). Clients
+  and scopes are configured per service; secrets come from the environment; tokens carry role SERVICE, last 5 minutes
+  and never act for a user. Not routed by the gateway.
+- subscription-service: reads catalog-service's event feed into `exam_view` (cursor, processed-event de-duplication);
+  free-access rules FA-1 (first N by catalogue position, global or per category), FA-2 (welcome attempts, off by
+  default), FA-3 (Trial bank for free and welcome access), FA-4 (modes on free exams), FA-5 (an exam started while free
+  stays free; welcome attempts counted once per attempt, serialised per student), FA-7 (an active entitlement unlocks
+  every premium exam). Entitlements are checked on every request.
+- APIs: `GET /api/access/exams` (public), `GET /api/access/me`, `GET/PUT /api/admin/billing/policies`,
+  `GET/POST /api/admin/billing/entitlements`, `POST …/{id}/revoke`, `POST /internal/access-decisions`
+  (scope billing.access). Every policy and entitlement change is audited.
+- catalog-service: the event feed only returns events at least 5 s old, so late-committing changes are never skipped
+  (ADR-006).
+- Migration V2 (billing): `free_exam_claim`; manual grant reason; exam title and address in `exam_view`.
+- web: Free / Premium badges on catalogue and home cards; locked preview on premium exams (drawn shapes only) with
+  sign-in or next steps; premium-only modes marked on free exams; "Your plan" on the account page; Administration →
+  Access (rules, published exams with reasons, give and revoke Premium); access shown on the exam setup's last step.
+- Docker: `SUBSCRIPTION_SERVICE_CLIENT_SECRET` is required in `.env`.
+
 ## Phase 7.5 — Guided exam setup (admin redesign)
 
 - web: an exam is now set up in 5 guided steps on one page — Details, Subjects & topics, Questions, Modes, Review &

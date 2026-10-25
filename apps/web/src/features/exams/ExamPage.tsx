@@ -261,7 +261,7 @@ function LockedPreview({ status }: { status: AccessStatus }) {
           </div>
         ))}
       </div>
-      <div className="flex items-center justify-center bg-surface/70 p-4 [grid-area:1/1]">
+      <div className="relative z-10 flex items-center justify-center bg-surface/70 p-4 [grid-area:1/1]">
         <div className="flex max-w-md flex-col items-center gap-3 rounded-lg border border-[#d9ccfb] bg-surface p-6 text-center shadow-raised">
           <span className="flex size-11 items-center justify-center rounded-full bg-premium-soft text-premium-ink">
             <Lock aria-hidden="true" className="size-5" />
