@@ -75,7 +75,8 @@ public class AdminEntitlementController {
     @PostMapping
     @Transactional
     public ResponseEntity<EntitlementView> grant(@Valid @RequestBody GrantInput in) {
-        Instant now = clock.instant();
+        // PostgreSQL keeps microseconds and rounds; truncating first means the stored start is never after "now".
+        Instant now = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         if (!in.endsAt().toInstant().isAfter(now)) {
             throw Requests.invalid("endsAt", "must be in the future");
         }

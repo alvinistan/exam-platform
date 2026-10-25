@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router';
-import { FileQuestion, FileText, FolderTree, Users } from 'lucide-react';
+import { FileQuestion, FileText, FolderTree, KeyRound, Users } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { PageLoading } from './PageLoading';
 
@@ -27,6 +27,9 @@ export function AdminLayout() {
           </NavLink>
           <NavLink to="/admin/categories" className={linkClass}>
             <FolderTree aria-hidden="true" className="size-4" /> Categories
+          </NavLink>
+          <NavLink to="/admin/access" className={linkClass}>
+            <KeyRound aria-hidden="true" className="size-4" /> Access
           </NavLink>
           <NavLink to="/admin/users" className={linkClass}>
             <Users aria-hidden="true" className="size-4" /> Users

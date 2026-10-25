@@ -1,6 +1,7 @@
 import { Navigate, type RouteObject } from 'react-router';
 import { PublicLayout } from '@/components/layout/PublicLayout';
 import {
+  AccessPage,
   AccountPage,
   AdminExamsPage,
   AdminLayout,
@@ -55,6 +56,7 @@ export const routes: RouteObject[] = [
           { path: 'exams/:examId', element: <ExamSetupIndex /> },
           { path: 'exams/:examId/:step', element: <ExamSetupPage /> },
           { path: 'categories', element: <CategoriesPage /> },
+          { path: 'access', element: <AccessPage /> },
           { path: 'content', element: <ContentLibraryPage /> },
           { path: 'questions', element: <QuestionsPage /> },
           { path: 'questions/new', element: <QuestionEditorPage /> },

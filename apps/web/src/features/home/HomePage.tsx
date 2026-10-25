@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import { ArrowRight, BookOpenCheck, Sparkles, Timer } from 'lucide-react';
 import { Card, Skeleton, buttonClasses } from '@/components/ui';
+import { useExamAccess } from '@/features/access/api';
 import { ExamCard } from '@/features/exams/ExamCard';
 import { useCategories, useExams } from '@/features/exams/api';
 
@@ -72,6 +73,7 @@ function FeaturedExams() {
   const featured = useExams({ featured: true, size: 10 });
   const categories = useCategories();
   const exams = featured.data?.items.slice(0, 6) ?? [];
+  const access = useExamAccess(exams.map((e) => e.id));
   const activeCategories = categories.data?.filter((c) => (c.examCount ?? 0) > 0) ?? [];
   const categoryName = (id: string) => categories.data?.find((c) => c.id === id)?.name;
 
@@ -104,7 +106,7 @@ function FeaturedExams() {
           <ul className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))]">
             {exams.map((exam) => (
               <li key={exam.id}>
-                <ExamCard exam={exam} categoryName={categoryName(exam.categoryId)} />
+                <ExamCard exam={exam} categoryName={categoryName(exam.categoryId)} access={access.data?.[exam.id]} />
               </li>
             ))}
           </ul>
