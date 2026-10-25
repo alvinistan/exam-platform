@@ -25,6 +25,6 @@ USER 10001:10001
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError" \
     SERVER_PORT=8080
 EXPOSE 8080
-HEALTHCHECK --interval=15s --timeout=3s --start-period=60s --retries=5 \
+HEALTHCHECK --interval=15s --timeout=3s --start-period=180s --start-interval=5s --retries=5 \
     CMD wget -qO- "http://127.0.0.1:${SERVER_PORT}/actuator/health/readiness" | grep -q '"UP"' || exit 1
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

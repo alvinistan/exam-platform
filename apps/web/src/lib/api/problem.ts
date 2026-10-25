@@ -32,6 +32,8 @@ export interface Problem {
   errors?: { field: string; message: string }[];
   /** With PUBLISH_BLOCKED: every reason an exam can't be (or stay) published. */
   blockers?: string[];
+  /** With PUBLISH_BLOCKED: the same reasons, each tagged with the setup step that fixes it. */
+  issues?: { step: 'DETAILS' | 'STRUCTURE' | 'QUESTIONS' | 'MODES'; message: string }[];
   /** With VALIDATION_FAILED on a workflow move: what the item still needs. */
   problems?: string[];
 }

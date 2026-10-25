@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -112,6 +113,30 @@ public class AdminExamController {
     @PostMapping("/{examId}/archive")
     public AdminExamDetail archive(@PathVariable UUID examId) {
         return exams.archive(CurrentUser.id(), examId);
+    }
+
+    @PostMapping("/{examId}/restore")
+    public AdminExamDetail restore(@PathVariable UUID examId) {
+        return exams.restore(CurrentUser.id(), examId);
+    }
+
+    /** Send {@code subjectId} to link an existing subject, or {@code title} to create a new one and link it. */
+    public record SubjectLinkInput(UUID subjectId, @Size(min = 2, max = 160) String title) {
+    }
+
+    @PostMapping("/{examId}/subjects")
+    public AdminExamDetail linkSubject(@PathVariable UUID examId, @Valid @RequestBody SubjectLinkInput input) {
+        boolean hasId = input.subjectId() != null;
+        boolean hasTitle = input.title() != null && !input.title().isBlank();
+        if (hasId == hasTitle) {
+            throw Requests.invalid("subjectId", "send either subjectId or title");
+        }
+        return exams.linkSubject(CurrentUser.id(), examId, input.subjectId(), hasTitle ? input.title().strip() : null);
+    }
+
+    @DeleteMapping("/{examId}/subjects/{subjectId}")
+    public AdminExamDetail unlinkSubject(@PathVariable UUID examId, @PathVariable UUID subjectId) {
+        return exams.unlinkSubject(CurrentUser.id(), examId, subjectId);
     }
 
     public record MixInput(@NotNull @Min(0) @Max(100) Integer simple, @NotNull @Min(0) @Max(100) Integer medium,

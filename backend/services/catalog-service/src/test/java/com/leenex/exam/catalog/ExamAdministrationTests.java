@@ -34,7 +34,9 @@ class ExamAdministrationTests extends CatalogTestSupport {
         MockHttpServletResponse r = expect(adminPost("/api/admin/catalog/exams/" + exam + "/publish", null), 409);
         assertThat((String) read(r, "$.code")).isEqualTo("PUBLISH_BLOCKED");
         assertThat((List<String>) read(r, "$.blockers")).containsExactly(
-                "Enable at least one exam mode.", "Link at least one subject that has an active topic.");
+                "Turn on at least one mode.", "Add a subject with at least one topic.");
+        assertThat((String) read(r, "$.issues[0].step")).isEqualTo("MODES");
+        assertThat((String) read(r, "$.issues[1].step")).isEqualTo("STRUCTURE");
     }
 
     @Test
@@ -49,7 +51,7 @@ class ExamAdministrationTests extends CatalogTestSupport {
 
         MockHttpServletResponse blocked = expect(adminPost("/api/admin/catalog/exams/" + exam + "/publish", null), 409);
         assertThat((List<String>) read(blocked, "$.blockers"))
-                .containsExactly("Practice needs at least 5 published questions; 4 published.");
+                .containsExactly("Practice needs at least 5 ready questions; 4 ready.");
         MockHttpServletResponse detail = adminGet("/api/admin/catalog/exams/" + exam);
         assertThat((Integer) read(detail, "$.publishedQuestionCount")).isEqualTo(4);
         assertThat((Integer) read(detail, "$.trialQuestionCount")).isEqualTo(3);
@@ -77,8 +79,8 @@ class ExamAdministrationTests extends CatalogTestSupport {
                 Map.of("title", "Topic one", "status", "ARCHIVED")), 200);
         MockHttpServletResponse blocked = expect(adminPost("/api/admin/catalog/exams/" + exam + "/publish", null), 409);
         assertThat((List<String>) read(blocked, "$.blockers")).contains(
-                "Link at least one subject that has an active topic.",
-                "Practice needs at least 1 published questions; 0 published.");
+                "Add a subject with at least one topic.",
+                "Practice needs at least 1 ready questions; 0 ready.");
     }
 
     @Test

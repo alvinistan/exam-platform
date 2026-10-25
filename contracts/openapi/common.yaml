@@ -60,6 +60,10 @@ components:
           type: array
           description: With PUBLISH_BLOCKED, every reason the exam can't be (or stay) published.
           items: { type: string }
+        issues:
+          type: array
+          description: With PUBLISH_BLOCKED, the same reasons, each tagged with the setup step that fixes it.
+          items: { $ref: '#/components/schemas/SetupIssue' }
         errors:
           type: array
           description: Field-level validation errors.
@@ -99,6 +103,12 @@ components:
           type: array
           items: { $ref: '#/components/schemas/Mode' }
         welcomeAttemptsLeft: { type: integer, minimum: 0 }
+    SetupIssue:
+      type: object
+      required: [step, message]
+      properties:
+        step: { type: string, enum: [DETAILS, STRUCTURE, QUESTIONS, MODES] }
+        message: { type: string, examples: ['Mock exam needs at least 20 ready questions; 12 ready.'] }
   responses:
     BadRequest:
       description: Validation failed.
