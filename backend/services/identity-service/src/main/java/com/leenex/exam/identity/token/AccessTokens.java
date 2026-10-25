@@ -60,6 +60,27 @@ public class AccessTokens {
         return new Issued(encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue(), ttl.toSeconds());
     }
 
+    /**
+     * A service token (ADR-005): role SERVICE, the granted scopes, and the client ID as subject. It can reach
+     * {@code /internal/**} but never acts for a user.
+     */
+    public Issued issueService(String clientId, List<String> scopes, Duration lifetime) {
+        Instant now = clock.instant();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer(platform.issuer())
+                .audience(List.of(platform.audience()))
+                .subject(clientId)
+                .issuedAt(now)
+                .expiresAt(now.plus(lifetime))
+                .id(UUID.randomUUID().toString())
+                .claim(PlatformJwt.CLAIM_ROLES, List.of(PlatformJwt.ROLE_SERVICE))
+                .claim(PlatformJwt.CLAIM_STATUS, "ACTIVE")
+                .claim(PlatformJwt.CLAIM_SCOPE, String.join(" ", scopes))
+                .build();
+        JwsHeader header = JwsHeader.with(SignatureAlgorithm.ES256).keyId(keys.signingKey().getKeyID()).build();
+        return new Issued(encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue(), lifetime.toSeconds());
+    }
+
     /** Verifies with the local public keys, so identity-service never calls its own JWKS endpoint. */
     public JwtDecoder decoder() {
         DefaultJWTProcessor<SecurityContext> processor = new DefaultJWTProcessor<>();

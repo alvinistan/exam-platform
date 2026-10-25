@@ -28,6 +28,17 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+# Phase 8: catalogue read model and this service's login for internal calls (ADR-005, ADR-006).
+subscription:
+  catalog-feed:
+    enabled: ${CATALOG_FEED_ENABLED:true}
+    base-url: ${CATALOG_SERVICE_URL:http://localhost:8082}
+    interval: ${CATALOG_FEED_INTERVAL:2s}
+  service-client:
+    token-uri: ${IDENTITY_TOKEN_URI:http://localhost:8081/oauth2/token}
+    client-id: subscription-service
+    client-secret: ${SUBSCRIPTION_SERVICE_CLIENT_SECRET:}
+
 platform:
   security:
     # identity-service's public signing keys; every access token is verified against them (ADR-004).

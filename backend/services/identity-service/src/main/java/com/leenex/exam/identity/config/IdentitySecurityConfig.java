@@ -17,13 +17,15 @@ public class IdentitySecurityConfig {
         return accessTokens.decoder();
     }
 
-    /** The sign-in flow and the public keys are reachable without an access token. */
+    /** The sign-in flow, the public keys and the service-token endpoint are reachable without an access token. */
     @Bean
     ApiAuthorizationRules identityPublicEndpoints() {
         return rules -> rules
                 .requestMatchers(HttpMethod.GET, "/api/auth/google/start", "/api/auth/google/callback",
                         "/.well-known/jwks.json").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/auth/token", "/api/auth/logout").permitAll();
+                .requestMatchers(HttpMethod.POST, "/api/auth/token", "/api/auth/logout").permitAll()
+                // Service clients authenticate with their own credentials; the gateway never routes this path.
+                .requestMatchers(HttpMethod.POST, "/oauth2/token").permitAll();
     }
 
     @Bean
