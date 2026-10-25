@@ -19,7 +19,7 @@ const modeIcons: Record<Mode, LucideIcon> = {
 const modeIntro: Record<Mode, string> = {
   PRACTICE: 'Learn as you go, one question at a time, with instant answers.',
   MOCK: 'Sit a full paper under exam conditions.',
-  USER_FRIENDLY: 'One question at a time with instant answers, on the topics you choose.',
+  USER_FRIENDLY: 'Each question is chosen after your last answer, at your level, with more on topics that need work.',
 };
 
 /**
@@ -274,9 +274,14 @@ function RecentAttempts({ examId }: { examId: string }) {
   if (!history.data || items.length === 0) return null;
   return (
     <section aria-labelledby="recent-heading" className="flex flex-col gap-3">
-      <h2 id="recent-heading" className="text-xl font-bold">
-        Your attempts
-      </h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="recent-heading" className="text-xl font-bold">
+          Your attempts
+        </h2>
+        <Link to={`/progress?exam=${examId}`} className="font-semibold">
+          My progress on this exam
+        </Link>
+      </div>
       <Card className="flex flex-col divide-y divide-border">
         {items.map((a) => (
           <div key={a.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5">

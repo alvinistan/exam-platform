@@ -14,6 +14,8 @@ servers:
 tags:
   - name: Attempts
     description: A student's own attempts
+  - name: Progress
+    description: A student's own performance profile (ADR-016)
   - name: Admin attempts
     description: Read-only attempt views for administrators
   - name: Internal
@@ -141,6 +143,49 @@ paths:
         '200': { description: The finished attempt with its result and review., content: { application/json: { schema: { $ref: '#/components/schemas/AttemptView' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
+  /api/progress/exams:
+    get:
+      tags: [Progress]
+      operationId: listExamsPractised
+      summary: Exams the student has practised, most recent first
+      responses:
+        '200':
+          description: One summary per exam.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [examId, title, slug, lastActivity, attempts, answered, accuracy, topicsNeedingWork]
+                  properties:
+                    examId: { type: string, format: uuid }
+                    title: { type: string }
+                    slug: { type: string }
+                    lastActivity: { type: string, format: date-time }
+                    attempts: { type: integer }
+                    answered: { type: integer }
+                    accuracy: { type: integer }
+                    topicsNeedingWork: { type: integer }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+  /api/progress/exams/{examId}:
+    get:
+      tags: [Progress]
+      operationId: getExamProgress
+      summary: Per-topic accuracy, level and status on one exam, what to practise next, and recent results
+      description: >-
+        Worked out from marked answers only (checked Practice and Adaptive answers, and Mock answers once the paper is
+        finished). Levels follow ADR-016: start at 2, move one step on at least 5 answers since the last change (up at
+        80% or more of the last 8, down below 40%).
+      parameters:
+        - { name: examId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Progress (empty lists before any marked answer).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExamProgress' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
   /api/admin/attempts:
     get:
       tags: [Admin attempts]
@@ -256,6 +301,7 @@ components:
             - type: 'null'
             - $ref: '#/components/schemas/Review'
           description: Present once the answer was checked (immediate feedback) or the attempt is finished.
+        level: { type: [integer, 'null'], minimum: 1, maximum: 3, description: "The student's level on the topic when the question was chosen." }
     Review:
       type: object
       required: [correctLabels, keyPoints, definitions, awarded, marks]
@@ -305,6 +351,11 @@ components:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/AttemptResult'
+        plannedCount:
+          type: integer
+          description: >-
+            Questions the attempt will have. An Adaptive exam gets its questions one at a time (each chosen after the
+            previous answer), so `questions` holds only those given so far.
     AttemptResult:
       type: object
       required: [score, maxScore, percent, correct, incorrect, unanswered, durationSeconds, byTopic]
@@ -331,6 +382,45 @@ components:
               incorrect: { type: integer }
               unanswered: { type: integer }
               percent: { type: integer }
+              level: { type: integer, minimum: 1, maximum: 3, description: "The student's level on the topic now." }
+              levelLabel: { type: string, enum: [Easy, Medium, Hard] }
+    ExamProgress:
+      type: object
+      required: [examId, answered, correct, accuracy, topics, focus, sessions]
+      properties:
+        examId: { type: string, format: uuid }
+        answered: { type: integer }
+        correct: { type: integer }
+        accuracy: { type: integer }
+        topics:
+          type: array
+          items:
+            type: object
+            required: [topicId, title, answered, correct, accuracy, recentAccuracy, level, levelLabel, status, levelTrend]
+            properties:
+              topicId: { type: string, format: uuid }
+              title: { type: string }
+              answered: { type: integer }
+              correct: { type: integer }
+              accuracy: { type: integer, description: All answers. }
+              recentAccuracy: { type: integer, description: The last 8 answers. }
+              level: { type: integer, minimum: 1, maximum: 3 }
+              levelLabel: { type: string, enum: [Easy, Medium, Hard] }
+              status: { type: string, enum: [STRONG, DEVELOPING, NEEDS_WORK, NOT_ENOUGH] }
+              levelTrend: { type: integer, enum: [-1, 0, 1], description: The last level move. }
+              lastPracticed: { type: string, format: date-time }
+        focus: { type: array, items: { type: string, format: uuid }, description: 'Topics to practise next, weakest first.' }
+        sessions:
+          type: array
+          description: The last 20 finished attempts, oldest first.
+          items:
+            type: object
+            properties:
+              attemptId: { type: string, format: uuid }
+              mode: { $ref: './common.yaml#/components/schemas/Mode' }
+              finishedAt: { type: string, format: date-time }
+              percent: { type: integer }
+              questions: { type: integer }
     AttemptCompletedEvent:
       type: object
       required: [seq, id, type, occurredAt, payload]

@@ -19,7 +19,7 @@ const modes = [
   {
     icon: Sparkles,
     title: 'Adaptive exam',
-    text: 'Pick how many questions or how much time you have, with instant answers on the topics you choose.',
+    text: 'Pick how many questions or how much time you have; each question adapts to how you answered the last one.',
   },
 ];
 

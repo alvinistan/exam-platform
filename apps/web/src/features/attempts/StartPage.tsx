@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronRight, Clock, ListOrdered, Lock } from 'lucide-react';
 import { Alert, Badge, Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
@@ -14,7 +14,8 @@ import { countChoices, minuteChoices, modeFromSlug } from './modes';
 const intro: Record<Mode, string> = {
   PRACTICE: 'One question at a time. You’ll see if you’re right, the correct answer and an explanation straight away.',
   MOCK: 'A timed paper, like the real exam. The clock is kept by our server, so it keeps running if you close the page.',
-  USER_FRIENDLY: 'One question at a time with instant answers, chosen around the topics you pick.',
+  USER_FRIENDLY:
+    'One question at a time with instant answers. Each question is chosen after your last answer: harder when you’re doing well, easier when a topic needs work.',
 };
 
 /** /exams/:slug/start/:mode — choose topics and how long, then start. */
@@ -66,7 +67,12 @@ function StartForm({ exam, settings }: { exam: ExamDetail; settings: PublicModeS
   const locked = modeAccess?.access === 'LOCKED';
 
   const topics = exam.subjects.flatMap((s) => s.modules.flatMap((m) => m.topics.map((t) => ({ ...t, subject: s.title }))));
-  const [chosen, setChosen] = useState<string[]>(() => topics.map((t) => t.id));
+  // "Practise these topics" on My progress links here with ?topics=…; otherwise every topic starts chosen.
+  const [params] = useSearchParams();
+  const [chosen, setChosen] = useState<string[]>(() => {
+    const asked = (params.get('topics') ?? '').split(',').filter((id) => topics.some((t) => t.id === id));
+    return asked.length ? asked : topics.map((t) => t.id);
+  });
   const counts = countChoices(settings.maxCount);
   const minutes = minuteChoices(mode === 'MOCK' ? settings.timeLimitSeconds : null);
   const [sizeBy, setSizeBy] = useState<'COUNT' | 'TIME'>('COUNT');

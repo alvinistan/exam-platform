@@ -153,6 +153,10 @@ presses Start on a type, picks topics and either a number of questions or the mi
   (or after each question, if set in step 4).
 - Mock exams are timed by the server (ADR-010): answers more than 5 s late are refused, and a sweep every 15 s
   finishes papers whose time ran out. Untouched practice sessions are closed after 24 h.
+- **Adaptive difficulty (ADR-016):** each student has a level per topic (Easy, Medium, Hard), worked out from their
+  marked answers: up after 80%+ correct, down below 40%, judged on at least 5 answers since the last change. All three
+  exam types choose difficulty from it; an Adaptive exam chooses each next question after the previous answer and gives
+  weak topics more questions. Students see it under **My progress** (`/progress`).
 - assessment-service signs in with the client-credentials grant: set `ASSESSMENT_SERVICE_CLIENT_SECRET` in `.env`
   (any long random value; identity-service and assessment-service both read it). Docker Compose refuses to start
   without it.
@@ -181,6 +185,6 @@ subscription-service decides access on every request (ADR-007); nothing is cache
 
 ## Status
 
-Phases 0–8 and Phase 9 Step A are complete: catalogue, question bank, guided exam setup, free attempts and Premium
-access, and the exam flow for Practice, Mock and Adaptive exams. Step B (difficulty that adapts per topic, and a
-"My progress" page) comes next. See `CHANGELOG.md`.
+Phases 0–9 are complete: catalogue, question bank, guided exam setup, free attempts and Premium access, the exam
+flow for Practice, Mock and Adaptive exams, and adaptive difficulty per topic with a "My progress" page. See
+`CHANGELOG.md`.
