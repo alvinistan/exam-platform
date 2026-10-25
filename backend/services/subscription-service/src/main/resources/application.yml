@@ -38,6 +38,14 @@ subscription:
     token-uri: ${IDENTITY_TOKEN_URI:http://localhost:8081/oauth2/token}
     client-id: subscription-service
     client-secret: ${SUBSCRIPTION_SERVICE_CLIENT_SECRET:}
+  # Phase 11 (ADR-011). TEST is a labelled stand-in where no money moves; it is refused under the prod profile.
+  payments:
+    provider: ${PAYMENT_PROVIDER:TEST}
+    public-base-url: ${PUBLIC_BASE_URL:http://localhost:8088}
+    payhere:
+      merchant-id: ${PAYHERE_MERCHANT_ID:}
+      merchant-secret: ${PAYHERE_MERCHANT_SECRET:}
+      sandbox: ${PAYHERE_SANDBOX:true}
 
 platform:
   security:

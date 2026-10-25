@@ -73,41 +73,50 @@ paths:
     get:
       tags: [Plans]
       operationId: listPlans
-      summary: Active plans
+      summary: Plans on sale
       security: [{}, { bearerAuth: [] }]
       responses:
         '200':
-          description: Active plans in display order.
+          description: Active plans in display order, and which payment provider is configured.
           content:
             application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/Plan' } }
+              schema:
+                type: object
+                required: [provider, testPayments, plans]
+                properties:
+                  provider: { type: string, enum: [PAYHERE, TEST] }
+                  testPayments: { type: boolean, description: 'True for the labelled TEST stand-in: no money moves and pages must say so.' }
+                  plans: { type: array, items: { $ref: '#/components/schemas/PublicPlan' } }
         '429':
           $ref: './common.yaml#/components/responses/TooManyRequests'
   /api/subscriptions/me:
     get:
       tags: [Plans]
       operationId: getMySubscription
-      summary: My subscription status and history
+      summary: My Premium status, subscription periods and recent payments
       responses:
         '200':
-          description: Current status (computed at request time) and history.
+          description: Computed at request time.
           content:
             application/json:
               schema:
                 type: object
-                required: [status, history]
+                required: [premium, periods, payments]
                 properties:
-                  status: { type: string, enum: [FREE, ACTIVE, EXPIRED, PAYMENT_PENDING] }
-                  activeUntil: { type: [string, 'null'], format: date-time }
-                  renewalReminder: { type: boolean, description: True within 7 days of expiry (SB-4). }
-                  history: { type: array, items: { $ref: '#/components/schemas/SubscriptionPeriod' } }
+                  premium: { type: boolean }
+                  premiumEndsAt: { type: [string, 'null'], format: date-time, description: 'End of the latest Premium (bought or given), including renewals that start later.' }
+                  periods: { type: array, items: { $ref: '#/components/schemas/SubscriptionPeriod' } }
+                  payments: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Payment' } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
   /api/subscriptions/checkout:
     post:
       tags: [Plans]
       operationId: startCheckout
-      summary: Start checkout for a plan
-      description: Creates a PENDING transaction (price copied from the plan) and returns the provider's hosted checkout URL. Nothing is activated here.
+      summary: Start paying for a plan
+      description: >-
+        Creates a PENDING payment (plan name, length and price copied from the plan) and returns where the browser goes
+        next. For PayHere that is a form POST to PayHere's checkout with signed fields; for TEST it is the labelled test
+        page. Nothing is activated here. The same Idempotency-Key returns the same payment.
       parameters:
         - $ref: './common.yaml#/components/parameters/IdempotencyKey'
       requestBody:
@@ -116,64 +125,116 @@ paths:
           application/json:
             schema:
               type: object
-              required: [planId]
+              required: [planId, customer]
               properties:
                 planId: { type: string, format: uuid }
+                customer:
+                  type: object
+                  description: Buyer details PayHere requires on its form. Passed through, not stored.
+                  required: [firstName, lastName, email, phone, address, city, country]
+                  properties:
+                    firstName: { type: string, maxLength: 50 }
+                    lastName: { type: string, maxLength: 50 }
+                    email: { type: string, format: email, maxLength: 100 }
+                    phone: { type: string, pattern: '^\+?[0-9 ()-]{7,20}$' }
+                    address: { type: string, maxLength: 100 }
+                    city: { type: string, maxLength: 50 }
+                    country: { type: string, maxLength: 50 }
       responses:
         '201':
-          description: Checkout created.
+          description: Payment created (or the one created earlier with this key).
           content:
             application/json:
               schema:
                 type: object
-                required: [transactionId, checkoutUrl, sandbox]
+                required: [transactionId, provider, status, action, method, fields]
                 properties:
                   transactionId: { type: string, format: uuid }
-                  checkoutUrl: { type: string, format: uri }
-                  sandbox: { type: boolean }
+                  provider: { type: string, enum: [PAYHERE, TEST] }
+                  status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
+                  action: { type: string, format: uri }
+                  method: { type: string, enum: [POST, GET] }
+                  fields:
+                    type: object
+                    additionalProperties: { type: string }
+                    description: Form fields to post to action (PayHere merchant_id, order_id, amount, currency, hash, …); empty for TEST.
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: The key was already used for a different plan (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
         '429': { $ref: './common.yaml#/components/responses/TooManyRequests' }
   /api/subscriptions/checkout/{transactionId}:
     get:
       tags: [Plans]
       operationId: getCheckoutStatus
-      summary: Poll a checkout's status (return page)
+      summary: A payment's status (polled by the return page)
+      description: The result comes only from the provider's verified notification; the return page never activates anything.
       parameters:
         - { name: transactionId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
-        '200':
-          description: Status only; the return page never activates anything.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status]
-                properties:
-                  status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
-                  activeUntil: { type: [string, 'null'], format: date-time }
+        '200': { description: The payment., content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
-  /api/payments/webhooks/{provider}:
+  /api/payments/webhooks/payhere:
     post:
       tags: [Payments]
-      operationId: receiveWebhook
-      summary: Payment-provider webhook
+      operationId: receivePayHereNotification
+      summary: PayHere notify_url
       description: >-
-        Signature verified against the raw body with the provider's secret and timestamp tolerance (5 min) before parsing.
-        Recorded once per provider event id (SB-9); success activates the subscription and entitlement in one transaction.
+        Public; authenticity comes from md5sig = UPPER(MD5(merchant_id + order_id + payhere_amount + payhere_currency +
+        status_code + UPPER(MD5(merchant_secret)))). Recorded once per order, status and payment id (SB-9). Status 2
+        activates the subscription and entitlement in one transaction after checking amount and currency; -1 and -2 mark
+        a pending payment cancelled or failed; -3 (charged back) revokes the entitlement.
       security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [merchant_id, order_id, payhere_amount, payhere_currency, status_code, md5sig]
+              properties:
+                merchant_id: { type: string }
+                order_id: { type: string, format: uuid }
+                payment_id: { type: string }
+                payhere_amount: { type: string, example: '4500.00' }
+                payhere_currency: { type: string, enum: [LKR, USD] }
+                status_code: { type: string, enum: ['2', '0', '-1', '-2', '-3'] }
+                md5sig: { type: string }
+                status_message: { type: string }
+                method: { type: string }
+      responses:
+        '200':
+          description: Genuine message accepted, including repeats. The body names the outcome.
+          content:
+            text/plain:
+              schema: { type: string, enum: [ACTIVATED, PENDING, CANCELLED, FAILED, CHARGED_BACK, DUPLICATE, UNKNOWN_ORDER, AMOUNT_MISMATCH, IGNORED] }
+        '400': { description: Missing or wrong signature; nothing recorded. }
+  /api/payments/test/{transactionId}:
+    post:
+      tags: [Payments]
+      operationId: completeTestPayment
+      summary: Labelled TEST provider only — the student's choice stands in for the provider
+      description: 404 when real payments are configured, or for someone else's payment. No money moves.
       parameters:
-        - { name: provider, in: path, required: true, schema: { type: string, enum: [sandbox, stripe, payhere] } }
+        - { name: transactionId, in: path, required: true, schema: { type: string, format: uuid } }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { type: object }
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [SUCCEEDED, FAILED, CANCELLED] }
       responses:
-        '200': { description: Accepted (including duplicates). }
-        '400': { description: Invalid signature or payload; nothing recorded. }
+        '200':
+          description: Outcome applied (same outcomes as the PayHere notification).
+          content:
+            application/json:
+              schema: { type: object, required: [result], properties: { result: { type: string } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
   /api/admin/billing/free-attempts:
     get:
       tags: [Admin billing]
@@ -189,6 +250,14 @@ paths:
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/billing/plans:
+    get:
+      tags: [Admin billing]
+      operationId: listAllPlans
+      summary: All plans, including those not on sale
+      responses:
+        '200': { description: Plans., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Plan' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
     post:
       tags: [Admin billing]
       operationId: createPlan
@@ -201,6 +270,37 @@ paths:
       responses:
         '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/Plan' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/billing/plans/{planId}:
+    put:
+      tags: [Admin billing]
+      operationId: updatePlan
+      summary: Change a plan (audited); payments already made keep their price
+      parameters:
+        - { name: planId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, description: The plan's version., schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanInput' }
+      responses:
+        '200': { description: Saved., content: { application/json: { schema: { $ref: '#/components/schemas/Plan' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: Someone else saved first (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/payments:
+    get:
+      tags: [Admin billing]
+      operationId: listPayments
+      summary: Payments, newest first (up to 200)
+      parameters:
+        - { name: studentId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Payments., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminPayment' } } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/billing/entitlements:
@@ -302,31 +402,43 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    PublicPlan:
+      type: object
+      required: [id, name, durationMonths, priceMinor, currency]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        durationMonths: { type: integer, enum: [1, 3, 6, 12] }
+        priceMinor: { type: integer, description: 'Price in the currency''s smallest unit (450000 = LKR 4,500.00).' }
+        currency: { type: string, enum: [LKR, USD] }
     Plan:
       type: object
-      required: [id, code, name, durationMonths, priceMinor, currency, active]
+      required: [id, code, name, durationMonths, priceMinor, currency, active, displayOrder, version]
       properties:
         id: { type: string, format: uuid }
         code: { type: string }
         name: { type: string }
         description: { type: string }
         durationMonths: { type: integer, enum: [1, 3, 6, 12] }
-        priceMinor: { type: integer, description: Price in the currency's smallest unit. }
-        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        priceMinor: { type: integer, description: 'Price in the currency''s smallest unit.' }
+        currency: { type: string, enum: [LKR, USD] }
         active: { type: boolean }
         displayOrder: { type: integer }
+        version: { type: integer, description: Send as If-Match when saving. }
+        updatedAt: { type: string, format: date-time }
     PlanInput:
       type: object
-      required: [code, name, durationMonths, priceMinor, currency]
+      required: [name, durationMonths, priceMinor, currency]
       properties:
-        code: { type: string, pattern: '^[a-z0-9-]{2,30}$' }
-        name: { type: string, maxLength: 60 }
-        description: { type: string, maxLength: 300 }
+        code: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,39}$', description: Required when creating; can't change. }
+        name: { type: string, minLength: 2, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
         durationMonths: { type: integer, enum: [1, 3, 6, 12] }
-        priceMinor: { type: integer, minimum: 1 }
-        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        priceMinor: { type: integer, minimum: 100, maximum: 10000000000 }
+        currency: { type: string, enum: [LKR, USD] }
         active: { type: boolean }
-        displayOrder: { type: integer }
+        displayOrder: { type: integer, minimum: 0, maximum: 1000 }
     SubscriptionPeriod:
       type: object
       required: [id, planName, status, startsAt, endsAt]
@@ -336,6 +448,39 @@ components:
         status: { type: string, enum: [ACTIVE, EXPIRED, CANCELLED] }
         startsAt: { type: string, format: date-time }
         endsAt: { type: string, format: date-time }
+    Payment:
+      type: object
+      required: [id, planName, durationMonths, amountMinor, currency, provider, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        planName: { type: string }
+        durationMonths: { type: integer }
+        amountMinor: { type: integer }
+        currency: { type: string }
+        provider: { type: string, enum: [PAYHERE, TEST] }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
+        failureReason: { type: [string, 'null'], enum: [CHARGEDBACK, NOT_COMPLETED, null] }
+        createdAt: { type: string, format: date-time }
+        premiumStartsAt: { type: [string, 'null'], format: date-time }
+        premiumEndsAt: { type: [string, 'null'], format: date-time }
+    AdminPayment:
+      type: object
+      required: [id, studentId, planId, planName, amountMinor, currency, provider, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        studentId: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        planName: { type: string }
+        durationMonths: { type: integer }
+        provider: { type: string, enum: [PAYHERE, TEST] }
+        providerRef: { type: [string, 'null'] }
+        idempotencyKey: { type: string }
+        amountMinor: { type: integer }
+        currency: { type: string }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
+        failureReason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     ExamFreeAttempts:
       type: object
       required: [examId, title, slug, modes, freeAttempts]

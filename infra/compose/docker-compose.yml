@@ -110,6 +110,11 @@ services:
       CATALOG_SERVICE_URL: http://catalog-service:8082
       IDENTITY_TOKEN_URI: http://identity-service:8081/oauth2/token
       SUBSCRIPTION_SERVICE_CLIENT_SECRET: ${SUBSCRIPTION_SERVICE_CLIENT_SECRET:?set SUBSCRIPTION_SERVICE_CLIENT_SECRET in .env}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8088}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-TEST}
+      PAYHERE_MERCHANT_ID: ${PAYHERE_MERCHANT_ID:-}
+      PAYHERE_MERCHANT_SECRET: ${PAYHERE_MERCHANT_SECRET:-}
+      PAYHERE_SANDBOX: ${PAYHERE_SANDBOX:-true}
 
   gateway:
     build: { <<: *service-build, args: { MODULE: gateway } }
