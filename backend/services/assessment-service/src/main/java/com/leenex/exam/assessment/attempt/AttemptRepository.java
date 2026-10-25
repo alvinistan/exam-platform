@@ -22,7 +22,8 @@ public class AttemptRepository {
                              String accessReason, String configJson, String status, String finishReason,
                              OffsetDateTime startedAt, OffsetDateTime expiresAt, OffsetDateTime lastActivityAt,
                              OffsetDateTime finishedAt, BigDecimal score, BigDecimal maxScore, Integer correctCount,
-                             Integer incorrectCount, Integer unansweredCount, List<UUID> topicIds, int questionCount) {
+                             Integer incorrectCount, Integer unansweredCount, List<UUID> topicIds, int questionCount,
+                             Integer plannedCount) {
 
         public boolean finished() {
             return "SCORED".equals(status);
@@ -34,18 +35,18 @@ public class AttemptRepository {
                               String difficulty, int estSeconds, String answerType, List<String> optionOrder,
                               List<String> correctLabels, BigDecimal marks, List<String> selected, boolean flagged,
                               boolean locked, int timeSpentMs, OffsetDateTime answeredAt, Boolean isCorrect,
-                              BigDecimal awarded) {
+                              BigDecimal awarded, Integer level) {
     }
 
     public record NewAttempt(UUID id, UUID studentId, UUID examId, String examTitle, String examSlug, String mode,
                              String generation, Integer requestedCount, Integer requestedSeconds, String bank,
                              String accessReason, String configJson, OffsetDateTime startedAt,
-                             OffsetDateTime expiresAt, String idempotencyKey, List<UUID> topicIds) {
+                             OffsetDateTime expiresAt, String idempotencyKey, List<UUID> topicIds, Integer plannedCount) {
     }
 
     public record NewQuestion(int position, UUID questionId, UUID versionId, UUID topicId, String topicTitle,
                               String difficulty, int estSeconds, String answerType, List<String> optionOrder,
-                              List<String> correctLabels, String misconceptionsJson, BigDecimal marks) {
+                              List<String> correctLabels, String misconceptionsJson, BigDecimal marks, Integer level) {
     }
 
     private static final String ATTEMPT_COLUMNS = """
@@ -64,9 +65,9 @@ public class AttemptRepository {
         jdbc.sql("""
                 INSERT INTO attempt (id, student_id, exam_id, exam_title, exam_slug, mode, generation, requested_count,
                     requested_seconds, bank, access_reason, config_snapshot, started_at, expires_at, last_activity_at,
-                    idempotency_key, topic_ids)
+                    idempotency_key, topic_ids, planned_count)
                 VALUES (:id, :student, :exam, :title, :slug, :mode, :generation, :count, :seconds, :bank, :reason,
-                    CAST(:config AS jsonb), :started, :expires, :started, :key, CAST(:topics AS uuid[]))
+                    CAST(:config AS jsonb), :started, :expires, :started, :key, CAST(:topics AS uuid[]), :planned)
                 """)
                 .param("id", a.id()).param("student", a.studentId()).param("exam", a.examId())
                 .param("title", a.examTitle()).param("slug", a.examSlug()).param("mode", a.mode())
@@ -74,24 +75,38 @@ public class AttemptRepository {
                 .param("seconds", a.requestedSeconds()).param("bank", a.bank()).param("reason", a.accessReason())
                 .param("config", a.configJson()).param("started", a.startedAt()).param("expires", a.expiresAt())
                 .param("key", a.idempotencyKey()).param("topics", array(a.topicIds().stream().map(UUID::toString).toList()))
+                .param("planned", a.plannedCount())
                 .update();
         for (NewQuestion q : questions) {
-            jdbc.sql("""
-                    INSERT INTO attempt_question (attempt_id, position, question_id, question_version_id, topic_id,
-                        topic_title, difficulty, est_seconds, answer_type, option_order, correct_labels,
-                        misconception_by_label, marks)
-                    VALUES (:attempt, :position, :question, :version, :topic, :topicTitle, :difficulty, :est, :type,
-                        CAST(:order AS char(1)[]), CAST(:correct AS char(1)[]), CAST(:misconceptions AS jsonb), :marks)
-                    """)
-                    .param("attempt", a.id()).param("position", q.position()).param("question", q.questionId())
-                    .param("version", q.versionId()).param("topic", q.topicId()).param("topicTitle", q.topicTitle())
-                    .param("difficulty", q.difficulty()).param("est", q.estSeconds()).param("type", q.answerType())
-                    .param("order", array(q.optionOrder())).param("correct", array(q.correctLabels()))
-                    .param("misconceptions", q.misconceptionsJson()).param("marks", q.marks())
-                    .update();
-            jdbc.sql("INSERT INTO response (attempt_id, position) VALUES (:attempt, :position)")
-                    .param("attempt", a.id()).param("position", q.position()).update();
+            insertQuestion(a.id(), q);
         }
+    }
+
+    /** Adds a question to an attempt (an Adaptive exam gets its questions one at a time), with an empty response. */
+    public void insertQuestion(UUID attemptId, NewQuestion q) {
+        jdbc.sql("""
+                INSERT INTO attempt_question (attempt_id, position, question_id, question_version_id, topic_id,
+                    topic_title, difficulty, est_seconds, answer_type, option_order, correct_labels,
+                    misconception_by_label, marks, target_level)
+                VALUES (:attempt, :position, :question, :version, :topic, :topicTitle, :difficulty, :est, :type,
+                    CAST(:order AS char(1)[]), CAST(:correct AS char(1)[]), CAST(:misconceptions AS jsonb), :marks,
+                    :level)
+                """)
+                .param("attempt", attemptId).param("position", q.position()).param("question", q.questionId())
+                .param("version", q.versionId()).param("topic", q.topicId()).param("topicTitle", q.topicTitle())
+                .param("difficulty", q.difficulty()).param("est", q.estSeconds()).param("type", q.answerType())
+                .param("order", array(q.optionOrder())).param("correct", array(q.correctLabels()))
+                .param("misconceptions", q.misconceptionsJson()).param("marks", q.marks())
+                .param("level", q.level() == null ? null : q.level().shortValue())
+                .update();
+        jdbc.sql("INSERT INTO response (attempt_id, position) VALUES (:attempt, :position)")
+                .param("attempt", attemptId).param("position", q.position()).update();
+    }
+
+    /** An Adaptive exam that ran out of suitable questions ends with the ones it has. */
+    public void setPlanned(UUID attemptId, int plannedCount) {
+        jdbc.sql("UPDATE attempt SET planned_count = :n WHERE id = :id").param("n", plannedCount).param("id", attemptId)
+                .update();
     }
 
     public void saveResponse(UUID attemptId, int position, List<String> selected, boolean flagged, boolean locked,
@@ -204,7 +219,7 @@ public class AttemptRepository {
                 rs.getObject("last_activity_at", OffsetDateTime.class), rs.getObject("finished_at", OffsetDateTime.class),
                 rs.getBigDecimal("score"), rs.getBigDecimal("max_score"), (Integer) rs.getObject("correct_count"),
                 (Integer) rs.getObject("incorrect_count"), (Integer) rs.getObject("unanswered_count"),
-                uuids(rs.getArray("topic_ids")), rs.getInt("question_count"));
+                uuids(rs.getArray("topic_ids")), rs.getInt("question_count"), (Integer) rs.getObject("planned_count"));
     }
 
     private static QuestionRow question(ResultSet rs, int n) throws SQLException {
@@ -214,7 +229,8 @@ public class AttemptRepository {
                 rs.getString("answer_type"), labels(rs.getArray("option_order")), labels(rs.getArray("correct_labels")),
                 rs.getBigDecimal("marks"), labels(rs.getArray("selected_labels")), rs.getBoolean("flagged"),
                 rs.getBoolean("locked"), rs.getInt("time_spent_ms"), rs.getObject("answered_at", OffsetDateTime.class),
-                (Boolean) rs.getObject("is_correct"), rs.getBigDecimal("awarded"));
+                (Boolean) rs.getObject("is_correct"), rs.getBigDecimal("awarded"),
+                rs.getObject("target_level") == null ? null : rs.getInt("target_level"));
     }
 
     private static List<String> labels(Array array) throws SQLException {

@@ -29,11 +29,12 @@ public final class AttemptViews {
     public record QuestionView(int position, UUID topicId, String topicTitle, String difficulty, String answerType,
                                int estSeconds, String stemHtml, String stemMediaUrl, String stemMediaAlt,
                                List<OptionView> options, List<String> selected, boolean flagged, boolean answered,
-                               Review review) {
+                               Review review, Integer level) {
     }
 
+    /** {@code level}: the student's level on the topic now, after this attempt (1 Easy, 2 Medium, 3 Hard). */
     public record TopicResult(UUID topicId, String title, int total, int correct, int incorrect, int unanswered,
-                              int percent) {
+                              int percent, int level, String levelLabel) {
     }
 
     public record Result(BigDecimal score, BigDecimal maxScore, int percent, int correct, int incorrect,
@@ -47,12 +48,14 @@ public final class AttemptViews {
      * @param requestedCount what the student asked for (COUNT sessions); {@code questions} may be fewer when the
      *                       pool is smaller
      * @param serverNow      the server's clock, so the client can render the countdown without trusting its own
+     * @param plannedCount   how many questions the attempt will have; an Adaptive exam gets them one at a time, so
+     *                       {@code questions} holds only those given so far
      */
     public record AttemptView(UUID id, UUID examId, String examTitle, String examSlug, String mode, String status,
                               String finishReason, String feedback, String sizeBy, Integer requestedCount,
                               Integer requestedMinutes, int estimatedSeconds, OffsetDateTime startedAt,
                               OffsetDateTime expiresAt, OffsetDateTime finishedAt, OffsetDateTime serverNow,
-                              List<TopicRef> topics, List<QuestionView> questions, Result result) {
+                              List<TopicRef> topics, List<QuestionView> questions, Result result, int plannedCount) {
     }
 
     public record AttemptSummary(UUID id, UUID examId, String examTitle, String examSlug, String mode, String status,

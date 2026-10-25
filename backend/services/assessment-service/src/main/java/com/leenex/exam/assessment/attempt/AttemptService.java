@@ -12,6 +12,8 @@ import com.leenex.exam.assessment.attempt.AttemptViews.Result;
 import com.leenex.exam.assessment.attempt.AttemptViews.Review;
 import com.leenex.exam.assessment.attempt.AttemptViews.TopicRef;
 import com.leenex.exam.assessment.attempt.AttemptViews.TopicResult;
+import com.leenex.exam.assessment.attempt.QuestionPicker.Choice;
+import com.leenex.exam.assessment.attempt.QuestionPicker.Context;
 import com.leenex.exam.assessment.attempt.QuestionPicker.Picked;
 import com.leenex.exam.assessment.attempt.QuestionPicker.Size;
 import com.leenex.exam.assessment.client.AccessClient;
@@ -25,6 +27,9 @@ import com.leenex.exam.assessment.client.CatalogClient.PoolOption;
 import com.leenex.exam.assessment.client.CatalogClient.PoolQuestion;
 import com.leenex.exam.assessment.client.CatalogClient.PoolTopic;
 import com.leenex.exam.assessment.config.AssessmentProperties;
+import com.leenex.exam.assessment.progress.LearningProfile;
+import com.leenex.exam.assessment.progress.ProgressService;
+import com.leenex.exam.assessment.progress.TopicLevels;
 import com.leenex.exam.assessment.support.Requests;
 import com.leenex.exam.platform.web.ApiException;
 import com.leenex.exam.platform.web.ProblemCode;
@@ -37,6 +42,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -76,7 +82,7 @@ public class AttemptService {
     private static final int HISTORY_LIMIT = 50;
 
     /** The mode settings copied onto the attempt at start, so later edits don't change a running attempt. */
-    public record AttemptConfig(String feedback, BigDecimal negativeMark, Integer passMarkPct) {
+    public record AttemptConfig(String feedback, BigDecimal negativeMark, Integer passMarkPct, Boolean shuffleOptions) {
 
         boolean immediate() {
             return "IMMEDIATE".equals(feedback);
@@ -102,9 +108,11 @@ public class AttemptService {
     private final Clock clock;
     private final AssessmentProperties.Timing timing;
     private final Random random;
+    private final ProgressService progress;
 
     public AttemptService(AttemptRepository attempts, CatalogClient catalog, AccessClient access, TransactionTemplate tx,
-                          JsonMapper json, Clock clock, AssessmentProperties properties) {
+                          JsonMapper json, Clock clock, AssessmentProperties properties, ProgressService progress) {
+        this.progress = progress;
         this.attempts = attempts;
         this.catalog = catalog;
         this.access = access;
@@ -168,12 +176,9 @@ public class AttemptService {
 
         OffsetDateTime now = now();
         Set<UUID> seen = attempts.seenSince(studentId, in.examId(), now.minus(timing.recentlySeen()));
-        List<PoolQuestion> usable = pool.questions().stream()
-                .filter(q -> chosenTopics.isEmpty() || chosenTopics.contains(q.topicId()))
-                .filter(q -> examTopics.containsKey(q.topicId()))
-                .filter(q -> q.options().size() >= 2 && q.options().stream().anyMatch(PoolOption::correct))
-                .toList();
-        Picked picked = QuestionPicker.pick(usable, seen, size, mode.maxCount(), mode.shuffleQuestions(), random);
+        List<PoolQuestion> usable = usable(pool, examTopics.keySet(), chosenTopics);
+        Context ctx = context(in.mode(), progress.profile(studentId, in.examId()), seen);
+        Picked picked = QuestionPicker.pick(usable, ctx, size, mode.maxCount(), mode.shuffleQuestions(), random);
         if (picked.questions().isEmpty()) {
             throw new ApiException(ProblemCode.INSUFFICIENT_QUESTIONS,
                     "There are no questions for the topics you chose yet. Choose other topics.");
@@ -185,7 +190,8 @@ public class AttemptService {
         }
         String feedback = "MOCK".equals(in.mode()) ? mode.feedbackTiming() : "IMMEDIATE";
         AttemptConfig config = new AttemptConfig(feedback,
-                mode.negativeMark() == null ? BigDecimal.ZERO : mode.negativeMark(), mode.passMarkPct());
+                mode.negativeMark() == null ? BigDecimal.ZERO : mode.negativeMark(), mode.passMarkPct(),
+                mode.shuffleOptions());
 
         UUID attemptId = UuidV7.generate();
         Decision decision = access.consume(studentId, in.examId(), in.mode(), attemptId);
@@ -193,23 +199,29 @@ public class AttemptService {
             throw AccessClient.refusal(decision, label(in.mode()));
         }
 
+        // A fixed set is given in full. An Adaptive exam plans its length the same way, then gets its first question
+        // now and each further one after the previous answer (ADR-016).
+        List<PoolQuestion> given = picked.questions();
+        Map<UUID, Integer> levels = picked.levels();
+        Integer planned = null;
+        if (ADAPTIVE.equals(in.mode())) {
+            planned = picked.questions().size();
+            Choice first = QuestionPicker.next(usable, List.of(), ctx, size.byTime() ? size.seconds() : null, random)
+                    .orElse(new Choice(picked.questions().getFirst(), ctx.levels().getOrDefault(
+                            picked.questions().getFirst().topicId(), TopicLevels.START_LEVEL)));
+            given = List.of(first.question());
+            levels = Map.of(first.question().questionId(), first.level());
+        }
         List<NewQuestion> questions = new ArrayList<>();
         int position = 1;
-        for (PoolQuestion q : picked.questions()) {
-            List<String> labels = q.options().stream().map(PoolOption::label).toList();
-            Map<String, String> misconceptions = new LinkedHashMap<>();
-            q.options().stream().filter(o -> o.misconceptionId() != null)
-                    .forEach(o -> misconceptions.put(o.label(), o.misconceptionId().toString()));
-            questions.add(new NewQuestion(position++, q.questionId(), q.versionId(), q.topicId(),
-                    examTopics.get(q.topicId()).title(), q.difficulty(), q.estSeconds(), q.answerType(),
-                    QuestionPicker.optionOrder(labels, mode.shuffleOptions(), random),
-                    q.options().stream().filter(PoolOption::correct).map(PoolOption::label).toList(),
-                    json.writeValueAsString(misconceptions), q.marks()));
+        for (PoolQuestion q : given) {
+            questions.add(newQuestion(position++, q, examTopics.get(q.topicId()).title(), levels.get(q.questionId()),
+                    mode.shuffleOptions()));
         }
         NewAttempt attempt = new NewAttempt(attemptId, studentId, in.examId(), pool.title(), pool.slug(), in.mode(),
                 size.by(), size.byTime() ? null : size.count(), size.byTime() ? size.seconds() : null,
                 decision.bank() == null ? "MAIN" : decision.bank(), decision.reason(), json.writeValueAsString(config),
-                now, expires, key, chosenTopics);
+                now, expires, key, chosenTopics, planned);
         try {
             tx.executeWithoutResult(s -> attempts.insert(attempt, questions));
         } catch (DuplicateKeyException e) {
@@ -221,6 +233,74 @@ public class AttemptService {
             throw new ApiException(ProblemCode.CONFLICT, "You already have a mock exam in progress for this exam.");
         }
         return new Started(view(studentId, attemptId), true);
+    }
+
+    static final String ADAPTIVE = "USER_FRIENDLY";
+
+    /** Questions that can be given: in the exam's (or the chosen) topics, with options and an answer key. */
+    private static List<PoolQuestion> usable(Pool pool, Set<UUID> examTopics, List<UUID> chosenTopics) {
+        return pool.questions().stream()
+                .filter(q -> chosenTopics.isEmpty() || chosenTopics.contains(q.topicId()))
+                .filter(q -> examTopics.contains(q.topicId()))
+                .filter(q -> q.options().size() >= 2 && q.options().stream().anyMatch(PoolOption::correct))
+                .toList();
+    }
+
+    /**
+     * What the picker knows about the student (ADR-016): levels per topic for every exam type; questions answered
+     * wrong last time come first in Practice and Adaptive exams (never in a Mock exam); and in an Adaptive exam the
+     * topics that need work get twice the share.
+     */
+    private static Context context(String mode, LearningProfile profile, Set<UUID> seen) {
+        Map<UUID, Integer> weights = new HashMap<>();
+        if (ADAPTIVE.equals(mode)) {
+            profile.weakTopics().forEach(t -> weights.put(t, 2));
+        }
+        return new Context(profile.levels(), weights, seen, profile.retryDue(), !"MOCK".equals(mode));
+    }
+
+    private NewQuestion newQuestion(int position, PoolQuestion q, String topicTitle, Integer level, Boolean shuffle) {
+        List<String> labels = q.options().stream().map(PoolOption::label).toList();
+        Map<String, String> misconceptions = new LinkedHashMap<>();
+        q.options().stream().filter(o -> o.misconceptionId() != null)
+                .forEach(o -> misconceptions.put(o.label(), o.misconceptionId().toString()));
+        return new NewQuestion(position, q.questionId(), q.versionId(), q.topicId(), topicTitle, q.difficulty(),
+                q.estSeconds(), q.answerType(), QuestionPicker.optionOrder(labels, !Boolean.FALSE.equals(shuffle), random),
+                q.options().stream().filter(PoolOption::correct).map(PoolOption::label).toList(),
+                json.writeValueAsString(misconceptions), q.marks(), level);
+    }
+
+    /**
+     * After an answer in an Adaptive exam: choose the next question with the student's levels as they are now,
+     * including the answer just given. Runs inside the answer's transaction. If nothing suitable is left the exam
+     * ends with the questions it has.
+     */
+    private void giveNextAdaptiveQuestion(AttemptRow row, OffsetDateTime now) {
+        List<QuestionRow> given = attempts.questions(row.id());
+        int planned = row.plannedCount() == null ? given.size() : row.plannedCount();
+        if (given.size() >= planned) {
+            return;
+        }
+        Pool pool = catalog.pool(row.examId(), row.topicIds());
+        Map<UUID, PoolTopic> examTopics = pool.topics().stream()
+                .collect(Collectors.toMap(PoolTopic::id, Function.identity(), (a, b) -> a));
+        List<PoolQuestion> usable = usable(pool, examTopics.keySet(), row.topicIds());
+        Map<UUID, PoolQuestion> byId = usable.stream().collect(Collectors.toMap(PoolQuestion::questionId, q -> q));
+        List<PoolQuestion> chosen = given.stream().map(g -> byId.getOrDefault(g.questionId(),
+                new PoolQuestion(g.questionId(), g.versionId(), g.topicId(), g.answerType(), g.difficulty(),
+                        g.estSeconds(), g.marks(), List.of()))).toList();
+        Set<UUID> seen = attempts.seenSince(row.studentId(), row.examId(), now.minus(timing.recentlySeen()));
+        Context ctx = context(row.mode(), progress.profile(row.studentId(), row.examId()), seen);
+        Integer budget = row.requestedSeconds() == null ? null
+                : row.requestedSeconds() - given.stream().mapToInt(QuestionRow::estSeconds).sum();
+        Optional<Choice> next = QuestionPicker.next(usable, chosen, ctx, budget, random);
+        if (next.isEmpty() || !examTopics.containsKey(next.get().question().topicId())) {
+            attempts.setPlanned(row.id(), given.size());
+            return;
+        }
+        PoolQuestion q = next.get().question();
+        attempts.insertQuestion(row.id(), newQuestion(given.size() + 1, q, examTopics.get(q.topicId()).title(),
+                next.get().level(), config(row).shuffleOptions()));
     }
 
     private void validate(StartInput in) {
@@ -311,6 +391,9 @@ public class AttemptService {
                             config.negativeMark());
                     attempts.saveResponse(attemptId, position, selected, flagged, true, spent, now, mark.correct(),
                             mark.awarded());
+                    if (ADAPTIVE.equals(row.mode())) {
+                        giveNextAdaptiveQuestion(row, now);
+                    }
                 } else {
                     attempts.saveResponse(attemptId, position, selected, flagged, false, spent,
                             selected.isEmpty() ? null : now, null, null);
@@ -452,7 +535,8 @@ public class AttemptService {
                 row.finishReason(), config.feedback(), row.generation(), row.requestedCount(),
                 row.requestedSeconds() == null ? null : row.requestedSeconds() / 60, estimated, row.startedAt(),
                 row.expiresAt(), row.finishedAt(), now(), topics, views,
-                row.finished() ? result(row, questions, config) : null);
+                row.finished() ? result(row, questions, config) : null,
+                Math.max(questions.size(), row.plannedCount() == null ? 0 : row.plannedCount()));
     }
 
     public List<AttemptSummary> history(UUID studentId, UUID examId) {
@@ -480,10 +564,11 @@ public class AttemptService {
         return new QuestionView(q.position(), q.topicId(), q.topicTitle(), q.difficulty(), q.answerType(), q.estSeconds(),
                 content == null ? "" : content.stemHtml(), content == null ? null : content.stemMediaUrl(),
                 content == null ? null : content.stemMediaAlt(), options, toDisplay(q, q.selected()), q.flagged(),
-                !q.selected().isEmpty(), review);
+                !q.selected().isEmpty(), review, q.level());
     }
 
-    private static Result result(AttemptRow row, List<QuestionRow> questions, AttemptConfig config) {
+    private Result result(AttemptRow row, List<QuestionRow> questions, AttemptConfig config) {
+        LearningProfile profile = progress.profile(row.studentId(), row.examId());
         Map<UUID, int[]> counts = new LinkedHashMap<>(); // total, correct, incorrect, unanswered
         Map<UUID, String> titles = new LinkedHashMap<>();
         for (QuestionRow q : questions) {
@@ -500,7 +585,8 @@ public class AttemptService {
         }
         List<TopicResult> byTopic = counts.entrySet().stream().map(e -> new TopicResult(e.getKey(),
                 titles.get(e.getKey()), e.getValue()[0], e.getValue()[1], e.getValue()[2], e.getValue()[3],
-                Math.round(100f * e.getValue()[1] / e.getValue()[0]))).toList();
+                Math.round(100f * e.getValue()[1] / e.getValue()[0]), profile.level(e.getKey()),
+                TopicLevels.label(profile.level(e.getKey())))).toList();
         int percent = Scoring.percent(row.score(), row.maxScore());
         OffsetDateTime end = row.finishedAt();
         long duration = Math.max(0, Duration.between(row.startedAt(), end).toSeconds());
