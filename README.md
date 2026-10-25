@@ -119,13 +119,27 @@ Administrators build exams from **Administration** in the web app, without code 
 Renaming an exam's address keeps the old one redirecting, and no other exam can take it. Archived exams leave the
 catalogue and their page says "unavailable".
 
-Question authoring arrives in the next phase. To publish an exam locally before then, add clearly labelled demo
-questions to a topic (local development only):
+Questions are written in **Administration → Questions** (Phase 7). For a quick local demo you can still add clearly
+labelled placeholder questions to a topic (local development only):
 
 ```bash
 docker compose -f infra/compose/docker-compose.yml --env-file .env exec -T postgres \
   psql -U postgres -d catalog -v topic_title="Dosage by weight" -v how_many=10 < infra/dev-data/demo-questions.sql
 ```
+
+## Question bank (Phase 7)
+
+- **Write**: Administration → Questions → New question. Rich text (bold, italic, lists), 4–5 options, single or
+  multiple correct answers, images with alt text, explanation, key points, definitions, difficulty, solving time,
+  tags, Trial or Main bank. The preview shows the question as a student sees it, answering and in review.
+- **Workflow**: Draft → Reviewed → Published → Archived. A question can only be reviewed or published when it is
+  complete (FR-QB-04). Publishing freezes that version; editing a published question creates a new version, and
+  students keep the published one until the change is published.
+- **Import**: Questions → Import. Download the CSV or Excel template, fill one row per question, upload, check the
+  row-by-row report, then confirm. Imported questions start as drafts.
+- **Bulk actions**: select questions in the list to change status, move topic or change bank (all or nothing).
+- **Images** are stored on the `catalogmedia` volume and shown through links that expire after about 10 minutes. Set
+  `CATALOG_MEDIA_SIGNING_KEY` (`openssl rand -base64 32`) so links survive restarts; staging and production must.
 
 ## Conventions
 
@@ -140,5 +154,5 @@ docker compose -f infra/compose/docker-compose.yml --env-file .env exec -T postg
 
 ## Status
 
-Phases 0–5 are complete. Phase 6 adds the configurable exam catalogue: categories, the content library, exams with
-mode settings and publishing rules, the public catalogue and exam pages. See `CHANGELOG.md`.
+Phases 0–6 are complete. Phase 7 adds the question bank: authoring with versions, review and publishing, images,
+imports and bulk actions. See `CHANGELOG.md`.

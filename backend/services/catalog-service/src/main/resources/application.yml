@@ -27,6 +27,19 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  servlet:
+    multipart:
+      # Question images are at most 2 MB and import files 5 MB (FR-QB-02, FR-QB-08).
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+catalog:
+  media:
+    dir: ${CATALOG_MEDIA_DIR:./data/media}
+    # Base64, at least 32 bytes. Empty locally: a temporary key is generated (media URLs break on restart).
+    signing-key: ${CATALOG_MEDIA_SIGNING_KEY:}
+    require-signing-key: ${CATALOG_REQUIRE_MEDIA_SIGNING_KEY:false}
+    url-lifetime: 10m
 
 platform:
   security:

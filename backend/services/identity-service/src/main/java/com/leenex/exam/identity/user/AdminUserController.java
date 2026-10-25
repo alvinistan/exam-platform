@@ -65,6 +65,18 @@ public class AdminUserController {
         return new UserPage(items, new PageMeta(page, size, result.total(), totalPages));
     }
 
+    /**
+     * Display names for up to 100 user IDs, so other services' admin screens can show who created or changed a record
+     * (FR-QB-12) without copying names into their own databases.
+     */
+    @GetMapping("/names")
+    public List<UserRepository.UserName> names(@RequestParam List<UUID> ids) {
+        if (ids.isEmpty() || ids.size() > 100) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Give between 1 and 100 user IDs.");
+        }
+        return users.names(Set.copyOf(ids));
+    }
+
     @PutMapping("/{userId}/roles/ADMIN")
     public ResponseEntity<Void> grantAdmin(@PathVariable UUID userId) {
         users.grantAdmin(CurrentUser.id(), userId);

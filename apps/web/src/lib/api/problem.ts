@@ -32,6 +32,8 @@ export interface Problem {
   errors?: { field: string; message: string }[];
   /** With PUBLISH_BLOCKED: every reason an exam can't be (or stay) published. */
   blockers?: string[];
+  /** With VALIDATION_FAILED on a workflow move: what the item still needs. */
+  problems?: string[];
 }
 
 /** Thrown by the API client for any non-2xx response, and for network failures (status 0). */

@@ -129,6 +129,20 @@ public class UserRepository {
                 .param("email", email).update() == 1;
     }
 
+    public record UserName(UUID id, String displayName) {
+    }
+
+    /** Display names for audit columns in other services' admin screens; deleted users show as "Deleted user". */
+    public List<UserName> names(java.util.Collection<UUID> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.sql("SELECT id, display_name FROM app_user WHERE id IN (:ids) ORDER BY display_name")
+                .param("ids", ids)
+                .query((rs, row) -> new UserName(rs.getObject("id", UUID.class), rs.getString("display_name")))
+                .list();
+    }
+
     public record Page(List<UserRecord> items, long total) {
     }
 

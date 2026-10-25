@@ -4,6 +4,8 @@ import { ApiError, isProblem } from './problem';
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
   /** JSON-serialised as the request body. */
   json?: unknown;
+  /** Multipart form body (file uploads); the browser sets the content type and boundary. */
+  form?: FormData;
   /** Query parameters; undefined values are skipped, arrays become comma-separated. */
   query?: Record<string, string | number | boolean | readonly (string | number)[] | undefined>;
 }
@@ -43,7 +45,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 }
 
 async function send(path: string, options: RequestOptions, token: string | null): Promise<Response> {
-  const { json, query, headers, ...init } = options;
+  const { json, form, query, headers, ...init } = options;
   const finalHeaders = new Headers(headers);
   finalHeaders.set('Accept', 'application/json, application/problem+json');
   if (json !== undefined) finalHeaders.set('Content-Type', 'application/json');
@@ -54,7 +56,7 @@ async function send(path: string, options: RequestOptions, token: string | null)
       ...init,
       headers: finalHeaders,
       credentials: 'same-origin',
-      ...(json !== undefined ? { body: JSON.stringify(json) } : {}),
+      ...(json !== undefined ? { body: JSON.stringify(json) } : form !== undefined ? { body: form } : {}),
     });
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;

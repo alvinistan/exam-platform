@@ -12,6 +12,8 @@ public class CatalogSecurityConfig {
     @Bean
     ApiAuthorizationRules catalogPublicEndpoints() {
         return rules -> rules
-                .requestMatchers(HttpMethod.GET, "/api/categories", "/api/exams", "/api/exams/by-slug/*").permitAll();
+                .requestMatchers(HttpMethod.GET, "/api/categories", "/api/exams", "/api/exams/by-slug/*").permitAll()
+                // Question images: a valid, unexpired signature in the URL is the permission (ADR-012).
+                .requestMatchers(HttpMethod.GET, "/api/media/*").permitAll();
     }
 }

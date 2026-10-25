@@ -17,7 +17,8 @@ ARG MODULE
 RUN apk upgrade --no-cache
 LABEL org.opencontainers.image.source="https://github.com/alvinistan/exam-platform" \
       org.opencontainers.image.title="$MODULE"
-RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
+RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app \
+    && mkdir -p /data/media && chown -R 10001:10001 /data   # writable data folder (catalog-service question images)
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /app.jar /app/app.jar
 USER 10001:10001

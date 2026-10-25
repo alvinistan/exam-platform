@@ -14,6 +14,27 @@
     <name>catalog-service</name>
     <description>Exams, categories, subjects, modules, topics, trial and main question banks, and media. Owns the "catalog" database.</description>
 
+    <dependencies>
+        <!-- Allow-list sanitiser for question rich text (FR-QB-01). -->
+        <dependency>
+            <groupId>com.googlecode.owasp-java-html-sanitizer</groupId>
+            <artifactId>owasp-java-html-sanitizer</artifactId>
+            <version>20260101.1</version>
+        </dependency>
+        <!-- XLSX question imports (FR-QB-08). -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.4.1</version>
+        </dependency>
+        <!-- Reads WebP uploads so they can be re-encoded (ADR-012). -->
+        <dependency>
+            <groupId>com.twelvemonkeys.imageio</groupId>
+            <artifactId>imageio-webp</artifactId>
+            <version>3.12.0</version>
+        </dependency>
+    </dependencies>
+
     <build>
         <finalName>catalog-service</finalName>
         <plugins>

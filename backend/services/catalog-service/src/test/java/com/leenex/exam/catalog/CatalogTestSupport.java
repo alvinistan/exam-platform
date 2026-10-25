@@ -49,6 +49,17 @@ abstract class CatalogTestSupport {
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("platform.security.jwks-uri",
                 () -> "http://127.0.0.1:" + JWKS.getAddress().getPort() + "/.well-known/jwks.json");
+        registry.add("catalog.media.dir", () -> MEDIA_DIR.toString());
+    }
+
+    static final java.nio.file.Path MEDIA_DIR = tempDir();
+
+    private static java.nio.file.Path tempDir() {
+        try {
+            return java.nio.file.Files.createTempDirectory("catalog-media-test");
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     static final UUID ADMIN_ID = UUID.randomUUID();
@@ -182,6 +193,52 @@ abstract class CatalogTestSupport {
         insertPublishedQuestions("bank_main", content.topicId(), 2);
         expect(adminPost("/api/admin/catalog/exams/" + exam + "/publish", null), 200);
         return exam;
+    }
+
+    /** A complete single-answer question body (4 options, B correct) for the given topic and bank. */
+    static Map<String, Object> questionInput(UUID topicId, String bank, String stem) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("topicId", topicId.toString());
+        body.put("bank", bank);
+        body.put("answerType", "SINGLE");
+        body.put("stemHtml", "<p>" + stem + "</p>");
+        body.put("options", List.of(option("<p>50 mg</p>", false), option("<p>100 mg</p>", true),
+                option("<p>150 mg</p>", false), option("<p>200 mg</p>", false)));
+        body.put("explanationHtml", "<p>20 kg × 5 mg/kg = 100 mg.</p>");
+        body.put("definitions", List.of(Map.of("term", "Dose per kg", "meaning", "Drug amount per kilogram")));
+        body.put("keyPoints", List.of("Multiply weight by dose per kg"));
+        body.put("difficulty", "SIMPLE");
+        body.put("estSeconds", 60);
+        body.put("tags", List.of("Dosage", "calculation"));
+        return body;
+    }
+
+    static Map<String, Object> option(String html, boolean correct) {
+        Map<String, Object> o = new LinkedHashMap<>();
+        o.put("bodyHtml", html);
+        o.put("isCorrect", correct);
+        return o;
+    }
+
+    UUID createQuestion(UUID topicId, String bank, String stem) throws Exception {
+        return UUID.fromString(read(expect(adminPost("/api/admin/catalog/questions",
+                questionInput(topicId, bank, stem)), 201), "$.id"));
+    }
+
+    MockHttpServletResponse transition(UUID questionId, String to) throws Exception {
+        return adminPost("/api/admin/catalog/questions/" + questionId + "/transitions", Map.of("to", to));
+    }
+
+    /** Draft → Reviewed → Published through the API. */
+    UUID publishedQuestion(UUID topicId, String bank, String stem) throws Exception {
+        UUID id = createQuestion(topicId, bank, stem);
+        expect(transition(id, "REVIEWED"), 200);
+        expect(transition(id, "PUBLISHED"), 200);
+        return id;
+    }
+
+    int questionVersion(UUID questionId) throws Exception {
+        return read(adminGet("/api/admin/catalog/questions/" + questionId), "$.version");
     }
 
     int version(UUID examId) throws Exception {
