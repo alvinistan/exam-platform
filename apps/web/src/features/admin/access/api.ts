@@ -2,41 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api/client';
 import type { Mode } from '@/features/exams/api';
 
-export type RuleCode = 'FA1_CATALOGUE_POSITION' | 'FA2_WELCOME_ALLOWANCE' | 'FA4_FREE_FEATURES';
-
-export interface Policy<P = Record<string, unknown>> {
-  ruleCode: RuleCode;
-  active: boolean;
-  params: P;
-  version: number;
-  updatedAt: string;
-}
-
-export interface PositionParams {
-  count: number;
-  scope: 'GLOBAL' | 'CATEGORY';
-}
-export interface WelcomeParams {
-  attempts: number;
-}
-export interface FeatureParams {
-  modes: Mode[];
-}
-
-export interface ExamAccessRow {
+/** contracts/openapi/subscription-service.yaml → ExamFreeAttempts. */
+export interface ExamFreeAttempts {
   examId: string;
   title: string;
   slug: string;
-  categoryId: string;
-  displayOrder: number | null;
-  access: 'FREE' | 'PREMIUM';
-  reason: string;
-}
-
-export interface PoliciesView {
-  policies: Policy[];
-  freeExamIds: string[];
-  exams: ExamAccessRow[];
+  modes: Mode[];
+  freeAttempts: Partial<Record<Mode, number>>;
 }
 
 export interface Entitlement {
@@ -55,14 +27,14 @@ export interface Entitlement {
 
 export const accessAdminKeys = {
   all: ['admin', 'access'] as const,
-  policies: () => [...accessAdminKeys.all, 'policies'] as const,
+  freeAttempts: () => [...accessAdminKeys.all, 'free-attempts'] as const,
   entitlements: () => [...accessAdminKeys.all, 'entitlements'] as const,
 };
 
-export function usePolicies() {
+export function useFreeAttempts() {
   return useQuery({
-    queryKey: accessAdminKeys.policies(),
-    queryFn: ({ signal }) => apiFetch<PoliciesView>('/admin/billing/policies', { signal }),
+    queryKey: accessAdminKeys.freeAttempts(),
+    queryFn: ({ signal }) => apiFetch<ExamFreeAttempts[]>('/admin/billing/free-attempts', { signal }),
   });
 }
 
@@ -72,13 +44,6 @@ export function useEntitlements() {
     queryFn: ({ signal }) => apiFetch<Entitlement[]>('/admin/billing/entitlements', { signal }),
   });
 }
-
-export const savePolicy = (rule: RuleCode, version: number, active: boolean, params: object) =>
-  apiFetch<Policy>(`/admin/billing/policies/${rule}`, {
-    method: 'PUT',
-    json: { active, params },
-    headers: { 'If-Match': `"${version}"` },
-  });
 
 export const grantEntitlement = (studentId: string, endsAt: string, reason: string) =>
   apiFetch<Entitlement>('/admin/billing/entitlements', { method: 'POST', json: { studentId, endsAt, reason } });

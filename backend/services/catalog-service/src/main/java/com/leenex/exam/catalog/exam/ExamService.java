@@ -370,7 +370,11 @@ public class ExamService {
         payload.put("categoryId", e.categoryId().toString());
         payload.put("displayOrder", e.displayOrder());
         payload.put("status", e.status());
-        payload.put("modes", modes.enabled(e.id()).stream().map(ModeSettings::mode).toList());
+        List<ModeSettings> enabled = modes.enabled(e.id());
+        payload.put("modes", enabled.stream().map(ModeSettings::mode).toList());
+        Map<String, Integer> freeAttempts = new LinkedHashMap<>();
+        enabled.forEach(m -> freeAttempts.put(m.mode(), m.freeAttempts()));
+        payload.put("freeAttempts", freeAttempts);
         payload.put("version", e.version());
         return payload;
     }

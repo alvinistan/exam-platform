@@ -3,20 +3,26 @@ import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/AuthContext';
 import type { Mode } from '@/features/exams/api';
 
+/** One exam type for the caller. OPEN: Premium. FREE: free attempts left (or would be, for a visitor). */
+export interface ModeAccess {
+  mode: Mode;
+  access: 'OPEN' | 'FREE' | 'LOCKED';
+  freeAttempts: number;
+  /** Null for anonymous visitors and Premium students. */
+  used: number | null;
+  left: number | null;
+}
+
 /** contracts/openapi/common.yaml → AccessStatus. Decided by subscription-service on every request. */
 export interface AccessStatus {
-  access: 'FREE' | 'PREMIUM_UNLOCKED' | 'LOCKED';
-  /** e.g. FA1_POSITION_2_OF_6, FA5_KEPT_FREE, ACTIVE_ENTITLEMENT, WELCOME_ALLOWANCE, SUBSCRIPTION_REQUIRED. */
-  reason: string;
-  freeModes: Mode[];
-  welcomeAttemptsLeft: number | null;
+  available: boolean;
+  premium: boolean;
+  modes: ModeAccess[];
 }
 
 export interface MyAccess {
   premium: boolean;
   entitlement: { source: 'SUBSCRIPTION' | 'MANUAL'; endsAt: string } | null;
-  welcomeAttemptsLeft: number | null;
-  freeExamCount: number;
 }
 
 export const accessKeys = {
@@ -26,8 +32,8 @@ export const accessKeys = {
 };
 
 /**
- * Free/premium status for a set of exams, for whoever is browsing (anonymous visitors get the policy view). Waits
- * for sign-in to settle so a signed-in student never briefly sees the anonymous answer.
+ * Free attempts and Premium status for a set of exams, for whoever is browsing. Waits for sign-in to settle so a
+ * signed-in student never briefly sees the anonymous answer.
  */
 export function useExamAccess(examIds: string[]) {
   const { state } = useAuth();
@@ -50,24 +56,19 @@ export function useMyAccess() {
   });
 }
 
-/** Plain-language reason, for administrators and for students who wonder why. */
-export function describeReason(reason: string): string {
-  const position = /^FA1_(CATEGORY_)?POSITION_(\d+)_OF_(\d+)$/.exec(reason);
-  if (position) {
-    return position[1]
-      ? `Free: position ${position[2]} of the first ${position[3]} in its category`
-      : `Free: position ${position[2]} of the first ${position[3]} in the catalogue`;
-  }
-  switch (reason) {
-    case 'FA5_KEPT_FREE':
-      return 'Free for you: you started it while it was free';
-    case 'ACTIVE_ENTITLEMENT':
-      return 'Unlocked by your Premium access';
-    case 'WELCOME_ALLOWANCE':
-      return 'You can try it with your welcome attempts';
-    case 'EXAM_UNAVAILABLE':
-      return 'Not available';
-    default:
-      return 'Needs Premium access';
-  }
+/** Overall label for an exam card: Premium (yours), free to try, or Premium only. */
+export function examAccessSummary(status: AccessStatus | undefined): 'PREMIUM_OPEN' | 'FREE' | 'LOCKED' | null {
+  if (!status || !status.available || status.modes.length === 0) return null;
+  if (status.premium) return 'PREMIUM_OPEN';
+  return status.modes.some((m) => m.access === 'FREE') ? 'FREE' : 'LOCKED';
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** Plain words for one exam type: "2 of 3 free attempts left", "Free attempts used", "Unlimited with Premium". */
+export function describeModeAccess(m: ModeAccess): string {
+  if (m.access === 'OPEN') return 'Unlimited with your Premium access';
+  if (m.left === null) return m.freeAttempts > 0 ? `${plural(m.freeAttempts, 'free attempt')}` : 'Premium only';
+  if (m.access === 'FREE') return `${m.left} of ${plural(m.freeAttempts, 'free attempt')} left`;
+  return m.freeAttempts > 0 ? `Free attempts used (${m.used ?? m.freeAttempts} of ${m.freeAttempts})` : 'Premium only';
 }

@@ -142,21 +142,31 @@ docker compose -f infra/compose/docker-compose.yml --env-file .env exec -T postg
 - **Images** are stored on the `catalogmedia` volume and shown through links that expire after about 10 minutes. Set
   `CATALOG_MEDIA_SIGNING_KEY` (`openssl rand -base64 32`) so links survive restarts; staging and production must.
 
-## Free and Premium access (Phase 8)
+## Taking exams (Phase 9)
+
+Each exam offers up to three exam types: **Practice**, **Mock exam** and **Adaptive exam**. A student opens the exam,
+presses Start on a type, picks topics and either a number of questions or the minutes they have.
+
+- assessment-service owns attempts. It fetches the question pool from catalog-service, chooses the questions
+  (topics take turns, no repeats, questions seen in the last 7 days last), copies the answer key, and marks every
+  answer itself. Practice and Adaptive check each answer as it is given; a Mock exam shows answers after submitting
+  (or after each question, if set in step 4).
+- Mock exams are timed by the server (ADR-010): answers more than 5 s late are refused, and a sweep every 15 s
+  finishes papers whose time ran out. Untouched practice sessions are closed after 24 h.
+- assessment-service signs in with the client-credentials grant: set `ASSESSMENT_SERVICE_CLIENT_SECRET` in `.env`
+  (any long random value; identity-service and assessment-service both read it). Docker Compose refuses to start
+  without it.
+
+## Free and Premium access
 
 subscription-service decides access on every request (ADR-007); nothing is cached past a change or an expiry.
 
-- **Free exams**: the first N published exams in catalogue order (default 6, across the whole catalogue or per
-  category). Set it in **Administration → Access**, which also lists every published exam with the reason it is Free
-  or Premium. An exam a student has started while it was free stays free for them (FA-5).
-- **Modes on free exams** and **welcome attempts** (a few sessions on premium exams for new students; off by default)
-  are set on the same page. Free and welcome sessions use the Trial bank; Premium uses the Main bank (FA-3).
-- **Premium access by hand**: Access → Premium access for students. Paid plans arrive in Phase 14.
-- Students see Free / Premium badges in the catalogue, a locked preview on premium exams (no question content is ever
-  sent) and their plan on the account page.
-- subscription-service learns about published exams from catalog-service's event feed, a few seconds after publishing.
-  It signs in to identity-service with the client-credentials grant: set `SUBSCRIPTION_SERVICE_CLIENT_SECRET` in `.env`
-  (any long random value; both services read it). Without it, nothing is marked Free.
+- **Free attempts per exam type**: each exam type of each exam gives every student a number of free attempts
+  (set in the exam's setup, step 4; defaults Practice 3, Mock 1, Adaptive 3). When they are used up that exam type
+  needs Premium; past results stay. **Administration → Access** lists the numbers for every published exam.
+- **Premium access by hand**: Access → Premium access for students. Paid plans arrive in a later phase.
+- subscription-service learns each exam's free attempts from catalog-service's event feed, a few seconds after a
+  change. It signs in with `SUBSCRIPTION_SERVICE_CLIENT_SECRET` from `.env`.
 
 ## Conventions
 
@@ -171,5 +181,6 @@ subscription-service decides access on every request (ADR-007); nothing is cache
 
 ## Status
 
-Phases 0–8 are complete: catalogue, question bank, guided exam setup (7.5) and free/premium access. Study sessions
-(Practice, Mock exam, Guided practice) come next. See `CHANGELOG.md`.
+Phases 0–8 and Phase 9 Step A are complete: catalogue, question bank, guided exam setup, free attempts and Premium
+access, and the exam flow for Practice, Mock and Adaptive exams. Step B (difficulty that adapts per topic, and a
+"My progress" page) comes next. See `CHANGELOG.md`.

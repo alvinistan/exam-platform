@@ -19,7 +19,7 @@ tags:
   - name: Payments
     description: Payment-provider callbacks
   - name: Admin billing
-    description: Policies, plans, payments and entitlements (Administrator only)
+    description: Free attempts overview, plans, payments and entitlements (Administrator only)
   - name: Internal
     description: Service-to-service only
 security:
@@ -30,7 +30,7 @@ paths:
       tags: [Access]
       operationId: getExamAccess
       summary: Access status for a list of exams
-      description: Anonymous callers get the policy view (Free or Locked); signed-in callers also see subscriptions and allowances.
+      description: Anonymous callers see each exam type's free attempts; signed-in callers also see how many they have left.
       security: [{}, { bearerAuth: [] }]
       parameters:
         - name: examIds
@@ -55,12 +55,12 @@ paths:
       summary: The caller's plan
       responses:
         '200':
-          description: Premium status, welcome attempts left and how many exams are free.
+          description: Premium status.
           content:
             application/json:
               schema:
                 type: object
-                required: [premium, freeExamCount]
+                required: [premium]
                 properties:
                   premium: { type: boolean }
                   entitlement:
@@ -68,8 +68,6 @@ paths:
                     properties:
                       source: { type: string, enum: [SUBSCRIPTION, MANUAL] }
                       endsAt: { type: string, format: date-time }
-                  welcomeAttemptsLeft: { type: [integer, 'null'], description: Null when the welcome allowance is off. }
-                  freeExamCount: { type: integer }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
   /api/plans:
     get:
@@ -176,47 +174,20 @@ paths:
       responses:
         '200': { description: Accepted (including duplicates). }
         '400': { description: Invalid signature or payload; nothing recorded. }
-  /api/admin/billing/policies:
+  /api/admin/billing/free-attempts:
     get:
       tags: [Admin billing]
-      operationId: getPolicies
-      summary: Free-access policies with a live preview
+      operationId: listFreeAttempts
+      summary: Published exams and the free attempts of each exam type
+      description: The numbers are set in each exam's setup (step 4, catalog-service) and reach this service through the catalogue feed.
       responses:
         '200':
-          description: Policies and the resulting free exam list.
+          description: Published exams in catalogue order.
           content:
             application/json:
-              schema:
-                type: object
-                required: [policies, freeExamIds, exams]
-                properties:
-                  policies: { type: array, items: { $ref: '#/components/schemas/Policy' } }
-                  freeExamIds: { type: array, items: { type: string, format: uuid } }
-                  exams:
-                    type: array
-                    description: Published exams in catalogue order and what the policies make of each.
-                    items: { $ref: '#/components/schemas/ExamAccess' }
+              schema: { type: array, items: { $ref: '#/components/schemas/ExamFreeAttempts' } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
-  /api/admin/billing/policies/{ruleCode}:
-    put:
-      tags: [Admin billing]
-      operationId: updatePolicy
-      summary: Change a free-access policy (audited)
-      parameters:
-        - { name: ruleCode, in: path, required: true, schema: { type: string, enum: [FA1_CATALOGUE_POSITION, FA2_WELCOME_ALLOWANCE, FA4_FREE_FEATURES] } }
-        - { name: If-Match, in: header, required: true, description: Version for optimistic locking., schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/Policy' }
-      responses:
-        '200': { description: Saved; applies from the next attempt (FA-6)., content: { application/json: { schema: { $ref: '#/components/schemas/Policy' } } } }
-        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
-        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
-        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
-        '409': { $ref: './common.yaml#/components/responses/Conflict' }
   /api/admin/billing/plans:
     post:
       tags: [Admin billing]
@@ -292,9 +263,8 @@ paths:
       summary: Decide whether a student may start a mode on an exam (assessment-service)
       description: >-
         Needs a service token with scope billing.access. Evaluated at request time with no caching beyond the request
-        (FR-ACC-03). With `consume` (and `attemptId`), an allowed start is recorded: a free exam stays free for the
-        student afterwards (FA-5) and a welcome attempt is counted once per attemptId; starts by one student are
-        serialised.
+        (FR-ACC-03). With `consume` (and `attemptId`), an allowed free start is counted against the free attempts of
+        that exam type, once per attemptId; starts by one student are serialised so free attempts can't be overspent.
       requestBody:
         required: true
         content:
@@ -318,12 +288,11 @@ paths:
                 required: [allowed, bank, reason]
                 properties:
                   allowed: { type: boolean }
-                  bank: { type: string, enum: [TRIAL, MAIN] }
+                  bank: { type: string, enum: [MAIN], description: Free attempts and Premium both use the Main bank. }
                   reason:
                     type: string
-                    description: >-
-                      FA1_POSITION_n_OF_N, FA1_CATEGORY_POSITION_n_OF_N, FA5_KEPT_FREE, ACTIVE_ENTITLEMENT,
-                      WELCOME_ALLOWANCE, MODE_NOT_FREE, SUBSCRIPTION_REQUIRED or EXAM_UNAVAILABLE.
+                    enum: [ACTIVE_ENTITLEMENT, FREE_ATTEMPT, FREE_ATTEMPTS_USED, SUBSCRIPTION_REQUIRED, MODE_NOT_AVAILABLE, EXAM_UNAVAILABLE]
+                  attemptsLeft: { type: [integer, 'null'], description: Free attempts left after this start; null for Premium. }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
 components:
@@ -367,17 +336,18 @@ components:
         status: { type: string, enum: [ACTIVE, EXPIRED, CANCELLED] }
         startsAt: { type: string, format: date-time }
         endsAt: { type: string, format: date-time }
-    ExamAccess:
+    ExamFreeAttempts:
       type: object
-      required: [examId, title, slug, categoryId, access, reason]
+      required: [examId, title, slug, modes, freeAttempts]
       properties:
         examId: { type: string, format: uuid }
         title: { type: string }
         slug: { type: string }
-        categoryId: { type: string, format: uuid }
-        displayOrder: { type: [integer, 'null'] }
-        access: { type: string, enum: [FREE, PREMIUM] }
-        reason: { type: string, examples: [FA1_POSITION_2_OF_6, SUBSCRIPTION_REQUIRED] }
+        modes: { type: array, items: { $ref: './common.yaml#/components/schemas/Mode' } }
+        freeAttempts:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          examples: [{ PRACTICE: 3, MOCK: 1, USER_FRIENDLY: 3 }]
     Entitlement:
       type: object
       required: [id, studentId, source, state, startsAt, endsAt, createdAt]
@@ -393,11 +363,3 @@ components:
         revokedAt: { type: [string, 'null'], format: date-time }
         revokedReason: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
-    Policy:
-      type: object
-      required: [ruleCode, active, params]
-      properties:
-        ruleCode: { type: string, enum: [FA1_CATALOGUE_POSITION, FA2_WELCOME_ALLOWANCE, FA4_FREE_FEATURES] }
-        active: { type: boolean }
-        params: { type: object }
-        version: { type: integer }

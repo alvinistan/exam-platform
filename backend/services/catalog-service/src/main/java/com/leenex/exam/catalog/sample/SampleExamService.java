@@ -83,7 +83,7 @@ public class SampleExamService {
 
         AdminExamDetail exam = exams.create(actor, new ExamService.ExamInput(
                 "O/L Science Revision (sample)", freeSlug(), categoryId,
-                "Sample exam: G.C.E. O/L Science questions on Biology, Chemistry and Physics.",
+                "Sample exam: G.C.E. O/L Science questions on ten topics, each at Easy, Medium and Hard level.",
                 "This is a sample exam made by Leenex Labs to show how an exam is set up. Edit it, publish it to try it "
                         + "as a student, or archive it when you no longer need it.",
                 null, null, null, false, List.of(subjectId)));
@@ -92,9 +92,10 @@ public class SampleExamService {
         for (UUID id : created) {
             questions.transition(actor, id, "PUBLISHED");
         }
+        exams.configureMode(actor, exam.id(), practice("PRACTICE"));
+        exams.configureMode(actor, exam.id(), mock());
+        exams.configureMode(actor, exam.id(), practice("USER_FRIENDLY"));
         int questionCount = created.size();
-        exams.configureMode(actor, exam.id(), practice());
-        exams.configureMode(actor, exam.id(), mock(Math.min(20, questionCount), questionCount));
         audit.record(actor, "SAMPLE_EXAM_CREATED", "EXAM", exam.id(), Map.of("questions", questionCount));
         return exams.adminGet(exam.id());
     }
@@ -115,16 +116,18 @@ public class SampleExamService {
         return slug;
     }
 
-    private static ModeSettings practice() {
-        ModeSettings s = ModeSettings.suggested("PRACTICE");
-        return new ModeSettings(s.mode(), true, 10, 5, 20, null, null, s.difficultyMix(), true, true, "IMMEDIATE",
-                s.resultVisibility(), s.negativeMark(), null, true, false, null, 0, true);
+    /** Practice or Adaptive: up to 30 questions, answers shown straight away, 3 free attempts. */
+    private static ModeSettings practice(String mode) {
+        ModeSettings s = ModeSettings.suggested(mode);
+        return new ModeSettings(mode, true, 10, 1, 30, null, null, s.difficultyMix(), true, true, "IMMEDIATE",
+                s.resultVisibility(), s.negativeMark(), null, true, s.adaptiveEnabled(), null, 3, 0, true);
     }
 
-    private static ModeSettings mock(int count, int max) {
+    /** Mock: up to 30 questions, at most 60 minutes, answers after submitting, 1 free attempt. */
+    private static ModeSettings mock() {
         ModeSettings s = ModeSettings.suggested("MOCK");
-        return new ModeSettings(s.mode(), true, count, count, Math.max(count, max), 30 * 60, null, s.difficultyMix(),
-                true, true, "AFTER_SUBMIT", s.resultVisibility(), s.negativeMark(), 50, false, false, null, 0, true);
+        return new ModeSettings("MOCK", true, 30, 1, 30, 60 * 60, null, s.difficultyMix(), true, true, "AFTER_SUBMIT",
+                s.resultVisibility(), s.negativeMark(), 50, true, false, null, 1, 0, true);
     }
 
     private static List<ImportFile.Row> rows() {

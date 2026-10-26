@@ -1,44 +1,40 @@
 package com.leenex.exam.subscription.access;
 
+import com.leenex.exam.platform.web.ApiException;
+import com.leenex.exam.platform.web.ProblemCode;
 import com.leenex.exam.subscription.access.AccessRules.Decision;
 import com.leenex.exam.subscription.access.AccessRules.Status;
 import com.leenex.exam.subscription.catalogfeed.ExamViewRepository;
 import com.leenex.exam.subscription.catalogfeed.ExamViewRepository.ExamView;
 import com.leenex.exam.subscription.entitlement.EntitlementRepository;
 import com.leenex.exam.subscription.entitlement.EntitlementRepository.EntitlementRow;
-import com.leenex.exam.platform.web.ApiException;
-import com.leenex.exam.platform.web.ProblemCode;
 import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Access decisions (ADR-007): computed on every request from the policies, the catalogue read model, the student's
- * entitlements, FA-5 claims and welcome-allowance usage. Nothing is cached between requests.
+ * Access decisions (ADR-007): computed on every request from the catalogue read model (free attempts per exam type),
+ * the student's entitlements and the attempts already counted. Nothing is cached between requests.
  */
 @Service
 public class AccessService {
 
-    static final String WELCOME_RULE = "FA2_WELCOME_ALLOWANCE";
-
-    private final PolicyRepository policies;
     private final ExamViewRepository exams;
     private final EntitlementRepository entitlements;
     private final JdbcClient jdbc;
     private final Clock clock;
 
-    public AccessService(PolicyRepository policies, ExamViewRepository exams, EntitlementRepository entitlements,
-                         JdbcClient jdbc, Clock clock) {
-        this.policies = policies;
+    public AccessService(ExamViewRepository exams, EntitlementRepository entitlements, JdbcClient jdbc, Clock clock) {
         this.exams = exams;
         this.entitlements = entitlements;
         this.jdbc = jdbc;
@@ -48,42 +44,39 @@ public class AccessService {
     /** Access status for each requested exam; {@code studentId} is null for anonymous visitors. */
     @Transactional(readOnly = true)
     public Map<UUID, Status> statuses(List<UUID> examIds, UUID studentId) {
-        FreePolicy policy = policies.current();
-        Map<UUID, String> byPosition = AccessRules.freeByPosition(policy, exams.publishedInOrder());
-        Set<UUID> published = exams.find(examIds).stream().filter(e -> "PUBLISHED".equals(e.status()))
-                .map(ExamView::examId).collect(Collectors.toSet());
-        boolean entitled = studentId != null && entitlements.activeFor(studentId, clock.instant()).isPresent();
-        Map<UUID, String> claims = studentId == null ? Map.of() : claims(studentId);
-        Integer welcomeLeft = studentId == null ? null : welcomeLeft(policy, studentId);
+        Map<UUID, ExamView> found = exams.find(examIds).stream()
+                .collect(Collectors.toMap(ExamView::examId, Function.identity()));
+        boolean premium = studentId != null && entitlements.activeFor(studentId, clock.instant()).isPresent();
+        Map<UUID, Map<String, Integer>> used = studentId == null || premium ? Map.of() : usedByExam(studentId, examIds);
         Map<UUID, Status> result = new LinkedHashMap<>();
         for (UUID id : examIds) {
-            result.put(id, AccessRules.status(published.contains(id), byPosition.get(id), claims.get(id), entitled,
-                    welcomeLeft, policy));
+            ExamView exam = found.get(id);
+            if (exam == null) {
+                result.put(id, AccessRules.status(false, List.of(), Map.of(), premium, null));
+                continue;
+            }
+            result.put(id, AccessRules.status(exam.published(), exam.modes(), exam.freeAttempts(), premium,
+                    studentId == null ? null : used.getOrDefault(id, Map.of())));
         }
         return result;
     }
 
-    public record MyAccess(boolean premium, EntitlementSummary entitlement, Integer welcomeAttemptsLeft,
-                           int freeExamCount) {
+    public record MyAccess(boolean premium, EntitlementSummary entitlement) {
     }
 
-    public record EntitlementSummary(String source, java.time.OffsetDateTime endsAt) {
+    public record EntitlementSummary(String source, OffsetDateTime endsAt) {
     }
 
     @Transactional(readOnly = true)
     public MyAccess me(UUID studentId) {
-        FreePolicy policy = policies.current();
         Optional<EntitlementRow> active = entitlements.activeFor(studentId, clock.instant());
-        return new MyAccess(active.isPresent(),
-                active.map(e -> new EntitlementSummary(e.source(), e.endsAt())).orElse(null),
-                welcomeLeft(policy, studentId),
-                AccessRules.freeByPosition(policy, exams.publishedInOrder()).size());
+        return new MyAccess(active.isPresent(), active.map(e -> new EntitlementSummary(e.source(), e.endsAt())).orElse(null));
     }
 
     /**
-     * Whether a student may start a mode on an exam (FR-ACC-03). With {@code consume}, an allowed start is recorded:
-     * a free exam becomes the student's to keep (FA-5) and a welcome attempt is counted once per attempt (FA-5,
-     * idempotent on {@code attemptId}). Starts by the same student are serialised so the allowance can't be overspent.
+     * Whether a student may start a mode on an exam (FR-ACC-03). With {@code consume}, an allowed free start is
+     * counted once per {@code attemptId} (a retried start is not counted twice). Starts by the same student are
+     * serialised so free attempts can't be overspent by parallel requests.
      */
     @Transactional
     public Decision decide(UUID studentId, UUID examId, String mode, boolean consume, UUID attemptId) {
@@ -94,52 +87,39 @@ public class AccessService {
             jdbc.sql("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))").param("key", studentId.toString())
                     .query((rs, n) -> 1).list();
         }
-        FreePolicy policy = policies.current();
         Optional<ExamView> exam = exams.find(List.of(examId)).stream().findFirst();
-        boolean published = exam.isPresent() && "PUBLISHED".equals(exam.get().status());
-        boolean entitled = entitlements.activeFor(studentId, clock.instant()).isPresent();
-        String positionReason = AccessRules.freeByPosition(policy, exams.publishedInOrder()).get(examId);
-        String freeReason = positionReason != null ? positionReason
-                : claims(studentId).containsKey(examId) ? "FA5_KEPT_FREE" : null;
-        // An attempt already counted against the allowance is allowed again (a retried start), whatever is left.
-        boolean alreadyCounted = attemptId != null && jdbc.sql("""
-                SELECT EXISTS (SELECT 1 FROM allowance_usage WHERE rule_code = :rule AND attempt_id = :attempt)
-                """).param("rule", WELCOME_RULE).param("attempt", attemptId).query(Boolean.class).single();
-        Integer welcomeLeft = alreadyCounted ? Integer.valueOf(1) : welcomeLeft(policy, studentId);
-        Decision decision = AccessRules.decide(published, freeReason, entitled, mode, welcomeLeft, policy);
-
-        if (consume && decision.allowed()) {
-            if (positionReason != null) {
-                jdbc.sql("""
-                        INSERT INTO free_exam_claim (student_id, exam_id, reason) VALUES (:s, :e, :r)
-                        ON CONFLICT DO NOTHING
-                        """).param("s", studentId).param("e", examId).param("r", positionReason).update();
-            }
-            if ("WELCOME_ALLOWANCE".equals(decision.reason())) {
-                jdbc.sql("""
-                        INSERT INTO allowance_usage (student_id, rule_code, attempt_id, exam_id)
-                        VALUES (:s, :rule, :attempt, :e) ON CONFLICT DO NOTHING
-                        """).param("s", studentId).param("rule", WELCOME_RULE).param("attempt", attemptId)
-                        .param("e", examId).update();
-            }
+        if (exam.isEmpty()) {
+            return AccessRules.decide(false, List.of(), Map.of(), false, mode, 0, false);
+        }
+        boolean premium = entitlements.activeFor(studentId, clock.instant()).isPresent();
+        int used = usedByExam(studentId, List.of(examId)).getOrDefault(examId, Map.of()).getOrDefault(mode, 0);
+        boolean alreadyCounted = attemptId != null && jdbc.sql(
+                        "SELECT EXISTS (SELECT 1 FROM free_attempt_use WHERE attempt_id = :a AND student_id = :s)")
+                .param("a", attemptId).param("s", studentId).query(Boolean.class).single();
+        Decision decision = AccessRules.decide(exam.get().published(), exam.get().modes(), exam.get().freeAttempts(),
+                premium, mode, used, alreadyCounted);
+        if (consume && decision.allowed() && "FREE_ATTEMPT".equals(decision.reason()) && !alreadyCounted) {
+            jdbc.sql("""
+                    INSERT INTO free_attempt_use (attempt_id, student_id, exam_id, mode) VALUES (:a, :s, :e, :m)
+                    ON CONFLICT DO NOTHING
+                    """).param("a", attemptId).param("s", studentId).param("e", examId).param("m", mode).update();
         }
         return decision;
     }
 
-    private Map<UUID, String> claims(UUID studentId) {
-        Map<UUID, String> claims = new HashMap<>();
-        jdbc.sql("SELECT exam_id, reason FROM free_exam_claim WHERE student_id = :s").param("s", studentId)
-                .query((rs, n) -> claims.put(rs.getObject("exam_id", UUID.class), rs.getString("reason"))).list();
-        return claims;
-    }
-
-    /** Welcome attempts left (FA-2), or null when the allowance is off. */
-    private Integer welcomeLeft(FreePolicy policy, UUID studentId) {
-        if (!policy.welcomeActive()) {
-            return null;
+    /** Counted free attempts per exam and mode for one student. */
+    private Map<UUID, Map<String, Integer>> usedByExam(UUID studentId, List<UUID> examIds) {
+        Map<UUID, Map<String, Integer>> used = new HashMap<>();
+        if (examIds.isEmpty()) {
+            return used;
         }
-        int used = jdbc.sql("SELECT count(*) FROM allowance_usage WHERE student_id = :s AND rule_code = :rule")
-                .param("s", studentId).param("rule", WELCOME_RULE).query(Integer.class).single();
-        return Math.max(0, policy.welcomeAttempts() - used);
+        jdbc.sql("""
+                SELECT exam_id, mode, count(*) AS n FROM free_attempt_use
+                WHERE student_id = :s AND exam_id IN (:ids) GROUP BY exam_id, mode
+                """).param("s", studentId).param("ids", examIds)
+                .query((rs, n) -> used.computeIfAbsent(rs.getObject("exam_id", UUID.class), k -> new HashMap<>())
+                        .put(rs.getString("mode"), rs.getInt("n")))
+                .list();
+        return used;
     }
 }

@@ -36,6 +36,8 @@ export interface Problem {
   issues?: { step: 'DETAILS' | 'STRUCTURE' | 'QUESTIONS' | 'MODES'; message: string }[];
   /** With VALIDATION_FAILED on a workflow move: what the item still needs. */
   problems?: string[];
+  /** With CONFLICT on starting a mock exam: the one already in progress. */
+  attemptId?: string;
 }
 
 /** Thrown by the API client for any non-2xx response, and for network failures (status 0). */

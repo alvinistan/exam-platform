@@ -9,7 +9,7 @@ const modes = [
   {
     icon: BookOpenCheck,
     title: 'Practice',
-    text: 'Choose subjects and topics, answer at your own pace and see the explanation after each question.',
+    text: 'Choose topics and a number of questions or minutes, and see the answer and explanation after each question.',
   },
   {
     icon: Timer,
@@ -18,8 +18,8 @@ const modes = [
   },
   {
     icon: Sparkles,
-    title: 'Guided practice',
-    text: 'Pick how many questions or how much time you have; the session adapts to what you need to revise.',
+    title: 'Adaptive exam',
+    text: 'Pick how many questions or how much time you have, with instant answers on the topics you choose.',
   },
 ];
 

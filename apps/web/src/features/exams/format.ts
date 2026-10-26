@@ -10,23 +10,16 @@ export function formatDuration(seconds: number): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
 
-/** Plain-language facts about one mode, for the exam page. */
+/** Plain-language facts about one exam type, for the exam page. */
 export function modeFacts(s: PublicModeSettings): string[] {
   const facts: string[] = [];
-  facts.push(
-    s.minCount === s.maxCount
-      ? `${s.defaultCount} questions`
-      : `${s.defaultCount} questions by default (choose ${s.minCount}–${s.maxCount})`,
-  );
-  if (s.timeLimitSeconds) facts.push(`Time limit ${formatDuration(s.timeLimitSeconds)}`);
-  else if (s.perQuestionSeconds) facts.push(`About ${formatDuration(s.perQuestionSeconds)} per question`);
-  else facts.push('No time limit');
+  facts.push(`Up to ${s.maxCount} questions, or choose how many minutes you have`);
+  if (s.mode === 'MOCK') {
+    facts.push(s.timeLimitSeconds ? `Timed, up to ${formatDuration(s.timeLimitSeconds)}` : 'Timed');
+  }
   facts.push(s.feedbackTiming === 'IMMEDIATE' ? 'See the answer after each question' : 'See answers after you submit');
   if (s.allowTopicChoice) facts.push('Choose the topics you want');
   if (s.passMarkPct) facts.push(`Pass mark ${s.passMarkPct}%`);
   if (s.negativeMark > 0) facts.push(`Wrong answers lose ${s.negativeMark} of a mark`);
-  if (s.maxRetakes !== null && s.maxRetakes !== undefined) {
-    facts.push(s.maxRetakes === 0 ? 'One attempt only' : `Up to ${s.maxRetakes} retakes`);
-  }
   return facts;
 }

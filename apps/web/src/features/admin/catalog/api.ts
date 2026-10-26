@@ -60,6 +60,8 @@ export interface ModeSettings {
   allowTopicChoice: boolean;
   adaptiveEnabled: boolean;
   maxRetakes: number | null;
+  /** Attempts of this exam type a student may start without Premium. */
+  freeAttempts: number;
   version: number;
   /** False while the mode has never been saved: the values are suggestions. */
   saved: boolean;
@@ -257,7 +259,10 @@ export const updateModule = (
   input: { title: string; displayOrder: number; status?: ContentStatus },
 ) => apiFetch<ModuleAdmin>(`/admin/catalog/modules/${id}`, { method: 'PUT', json: input, headers: ifMatch(version) });
 
-export const createTopic = (input: { moduleId: string; title: string; displayOrder: number; prerequisiteTopicIds: string[] }) =>
+/** Give moduleId, or subjectId to add the topic straight under a subject (its first module, created if needed). */
+export const createTopic = (
+  input: ({ moduleId: string } | { subjectId: string }) & { title: string; displayOrder: number; prerequisiteTopicIds: string[] },
+) =>
   apiFetch<TopicAdmin>('/admin/catalog/topics', { method: 'POST', json: input });
 
 export const updateTopic = (

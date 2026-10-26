@@ -1,98 +1,107 @@
 package com.leenex.exam.subscription.access;
 
-import com.leenex.exam.subscription.catalogfeed.ExamViewRepository.ExamView;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * The free-access rules as plain functions, so they are easy to test and identical everywhere they are applied
  * (ADR-007). No database or clock here.
+ *
+ * <p>Rules (Phase 9, replacing the catalogue-position rules):
+ * <ul>
+ *   <li>Each exam sets, per exam type (mode), how many attempts a student may start without Premium.</li>
+ *   <li>Attempts are counted per student, exam and mode; each started attempt counts once.</li>
+ *   <li>When they are used up, that exam type is locked until the student has Premium. Past results stay.</li>
+ *   <li>A student with an active entitlement may start any switched-on mode without limit.</li>
+ * </ul>
  */
 public final class AccessRules {
+
+    public static final List<String> MODES = List.of("PRACTICE", "MOCK", "USER_FRIENDLY");
 
     private AccessRules() {
     }
 
     /**
-     * FA-1: the exams that are free by catalogue position, with the reason, e.g. {@code FA1_POSITION_2_OF_6} or
-     * {@code FA1_CATEGORY_POSITION_1_OF_6}. {@code published} must be in catalogue order.
+     * One exam type for one caller. {@code access}: OPEN (Premium), FREE (free attempts left, or an anonymous visitor
+     * who would get some) or LOCKED. {@code used} and {@code left} are null for anonymous visitors and Premium students.
      */
-    public static Map<UUID, String> freeByPosition(FreePolicy policy, List<ExamView> published) {
-        Map<UUID, String> free = new LinkedHashMap<>();
-        if (!policy.positionActive() || policy.freeCount() <= 0) {
-            return free;
-        }
-        boolean byCategory = "CATEGORY".equals(policy.scope());
-        Map<UUID, Integer> rankInCategory = new HashMap<>();
-        int globalRank = 0;
-        for (ExamView exam : published) {
-            int rank = byCategory ? rankInCategory.merge(exam.categoryId(), 1, Integer::sum) : ++globalRank;
-            if (rank <= policy.freeCount()) {
-                free.put(exam.examId(), (byCategory ? "FA1_CATEGORY_POSITION_" : "FA1_POSITION_") + rank + "_OF_"
-                        + policy.freeCount());
-            }
-        }
-        return free;
+    public record ModeAccess(String mode, String access, int freeAttempts, Integer used, Integer left) {
     }
 
-    /** What one student (or an anonymous visitor) knows about access to one exam. */
-    public record Status(String access, String reason, List<String> freeModes, Integer welcomeAttemptsLeft) {
+    /** What a caller knows about one exam: whether it's available, whether they have Premium, and each mode. */
+    public record Status(boolean available, boolean premium, List<ModeAccess> modes) {
     }
 
     /**
-     * Access status for display (FR-ACC-01). {@code entitled}: an active entitlement (FA-7). {@code claimReason}: the
-     * exam stayed free for this student (FA-5), or null. {@code welcomeLeft}: remaining welcome attempts, or null
-     * when FA-2 is off or the caller is anonymous.
+     * @param published    the exam is published
+     * @param enabledModes modes switched on for the exam
+     * @param freeAttempts free attempts per mode (missing = 0)
+     * @param premium      the caller has an active entitlement
+     * @param used         attempts already counted per mode, or null for anonymous visitors
      */
-    public static Status status(boolean published, String positionReason, String claimReason, boolean entitled,
-                                Integer welcomeLeft, FreePolicy policy) {
+    public static Status status(boolean published, List<String> enabledModes, Map<String, Integer> freeAttempts,
+                                boolean premium, Map<String, Integer> used) {
         if (!published) {
-            return new Status("LOCKED", "EXAM_UNAVAILABLE", List.of(), null);
+            return new Status(false, premium, List.of());
         }
-        if (positionReason != null) {
-            return new Status("FREE", positionReason, policy.modesOnFreeExams(), null);
-        }
-        if (claimReason != null) {
-            return new Status("FREE", "FA5_KEPT_FREE", policy.modesOnFreeExams(), null);
-        }
-        if (entitled) {
-            return new Status("PREMIUM_UNLOCKED", "ACTIVE_ENTITLEMENT", FreePolicy.ALL_MODES, null);
-        }
-        if (welcomeLeft != null && welcomeLeft > 0) {
-            return new Status("LOCKED", "WELCOME_ALLOWANCE", FreePolicy.ALL_MODES, welcomeLeft);
-        }
-        return new Status("LOCKED", "SUBSCRIPTION_REQUIRED", List.of(), welcomeLeft);
+        List<ModeAccess> modes = MODES.stream().filter(enabledModes::contains).map(mode -> {
+            int free = Math.max(0, freeAttempts.getOrDefault(mode, 0));
+            if (premium) {
+                return new ModeAccess(mode, "OPEN", free, null, null);
+            }
+            if (used == null) {
+                return new ModeAccess(mode, free > 0 ? "FREE" : "LOCKED", free, null, null);
+            }
+            int counted = used.getOrDefault(mode, 0);
+            int left = Math.max(0, free - counted);
+            return new ModeAccess(mode, left > 0 ? "FREE" : "LOCKED", free, counted, left);
+        }).toList();
+        return new Status(true, premium, modes);
     }
 
-    /** Whether an attempt may start, and from which bank (FA-3: free and welcome access use the Trial bank). */
-    public record Decision(boolean allowed, String bank, String reason) {
+    /**
+     * Whether an attempt may start. {@code attemptsLeft} is null for Premium starts. Questions always come from the
+     * Main bank; the Trial bank is not used for free attempts.
+     */
+    public record Decision(boolean allowed, String bank, String reason, Integer attemptsLeft) {
     }
 
-    /** {@code freeReason}: why the exam is free for this student (position or FA-5), or null. */
-    public static Decision decide(boolean published, String freeReason, boolean entitled, String mode,
-                                  Integer welcomeLeft, FreePolicy policy) {
+    /**
+     * @param alreadyCounted this attempt was counted before (a retried start), so it is allowed again
+     * @param used           attempts already counted for this student, exam and mode
+     */
+    public static Decision decide(boolean published, List<String> enabledModes, Map<String, Integer> freeAttempts,
+                                  boolean premium, String mode, int used, boolean alreadyCounted) {
         if (!published) {
-            return new Decision(false, "TRIAL", "EXAM_UNAVAILABLE");
+            return new Decision(false, "MAIN", "EXAM_UNAVAILABLE", null);
         }
-        if (entitled) {
-            return new Decision(true, "MAIN", "ACTIVE_ENTITLEMENT");
+        if (!enabledModes.contains(mode)) {
+            return new Decision(false, "MAIN", "MODE_NOT_AVAILABLE", null);
         }
-        if (freeReason != null) {
-            if (policy.modesOnFreeExams().contains(mode)) {
-                return new Decision(true, "TRIAL", freeReason);
+        if (premium) {
+            return new Decision(true, "MAIN", "ACTIVE_ENTITLEMENT", null);
+        }
+        int free = Math.max(0, freeAttempts.getOrDefault(mode, 0));
+        if (alreadyCounted) {
+            return new Decision(true, "MAIN", "FREE_ATTEMPT", Math.max(0, free - used));
+        }
+        if (used < free) {
+            return new Decision(true, "MAIN", "FREE_ATTEMPT", free - used - 1);
+        }
+        return new Decision(false, "MAIN", free == 0 ? "SUBSCRIPTION_REQUIRED" : "FREE_ATTEMPTS_USED", 0);
+    }
+
+    /** Free attempts per mode from a feed payload's map, keeping only known modes and non-negative numbers. */
+    public static Map<String, Integer> cleanFreeAttempts(Map<String, Integer> raw) {
+        Map<String, Integer> clean = new LinkedHashMap<>();
+        for (String mode : MODES) {
+            Integer n = raw.get(mode);
+            if (n != null && n >= 0) {
+                clean.put(mode, n);
             }
-            // The exam is free but this mode isn't (FA-4); the welcome allowance may still cover it.
-            if (welcomeLeft != null && welcomeLeft > 0) {
-                return new Decision(true, "TRIAL", "WELCOME_ALLOWANCE");
-            }
-            return new Decision(false, "TRIAL", "MODE_NOT_FREE");
         }
-        if (welcomeLeft != null && welcomeLeft > 0) {
-            return new Decision(true, "TRIAL", "WELCOME_ALLOWANCE");
-        }
-        return new Decision(false, "TRIAL", "SUBSCRIPTION_REQUIRED");
+        return clean;
     }
 }

@@ -5,6 +5,7 @@ import {
   AccountPage,
   AdminExamsPage,
   AdminLayout,
+  AttemptPage,
   CategoriesPage,
   ContentLibraryPage,
   ExamSetupIndex,
@@ -13,6 +14,7 @@ import {
   QuestionEditorPage,
   QuestionImportPage,
   QuestionsPage,
+  StartPage,
   UsersPage,
 } from './lazyPages';
 import { SignInPage } from '@/features/auth/SignInPage';
@@ -33,6 +35,22 @@ export const routes: RouteObject[] = [
       { index: true, element: <HomePage /> },
       { path: 'exams', element: <CataloguePage /> },
       { path: 'exams/:slug', element: <ExamPage /> },
+      {
+        path: 'exams/:slug/start/:mode',
+        element: (
+          <RequireAuth>
+            <StartPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'attempts/:attemptId',
+        element: (
+          <RequireAuth>
+            <AttemptPage />
+          </RequireAuth>
+        ),
+      },
       { path: 'signin', element: <SignInPage /> },
       {
         path: 'account',

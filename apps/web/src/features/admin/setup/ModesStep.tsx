@@ -9,8 +9,8 @@ import { setupPath } from './steps';
 export function ModesStep({ exam }: { exam: AdminExamDetail }) {
   return (
     <Card className="flex flex-col gap-6 p-6 sm:p-8">
-      <StepHeading number={4} title="How can students take this exam?">
-        Turn on at least one. You have <strong className="text-ink">{exam.publishedQuestionCount} ready questions</strong> to
+      <StepHeading number={4} title="Exam types">
+        Turn on at least one exam type. You have <strong className="text-ink">{exam.publishedQuestionCount} ready questions</strong> to
         share between them.
       </StepHeading>
       {exam.modeSettings.map((settings) => (

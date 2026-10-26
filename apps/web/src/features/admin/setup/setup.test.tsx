@@ -31,6 +31,7 @@ function modeSettings(mode: string, extra: Record<string, unknown> = {}) {
     allowTopicChoice: mode !== 'MOCK',
     adaptiveEnabled: false,
     maxRetakes: null,
+    freeAttempts: mode === 'MOCK' ? 1 : 3,
     version: 0,
     saved: false,
     ...extra,
@@ -320,11 +321,11 @@ describe('setup navigation', () => {
       'GET /api/admin/catalog/exams/exam-1': () => jsonResponse(adminExam({ ...withStructure, publishedQuestionCount: 4 })),
     });
     renderRoute('/admin/exams/exam-1');
-    expect(await screen.findByRole('heading', { level: 2, name: 'How can students take this exam?' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Exam types' })).toBeInTheDocument();
     const steps = screen.getByRole('navigation', { name: 'Setup steps' });
     expect(within(steps).getByRole('link', { name: /Subjects & topics/ })).toHaveTextContent('Done:');
-    expect(within(steps).getByRole('link', { name: /Modes/ })).toHaveAttribute('aria-current', 'step');
-    expect(within(steps).getByRole('link', { name: /Modes/ })).toHaveTextContent('Needs attention:');
+    expect(within(steps).getByRole('link', { name: /Exam types/ })).toHaveAttribute('aria-current', 'step');
+    expect(within(steps).getByRole('link', { name: /Exam types/ })).toHaveTextContent('Needs attention:');
   });
 
   it('offers to restore an archived exam', async () => {
@@ -366,11 +367,11 @@ describe('step 2: subjects and topics', () => {
     });
     renderRoute('/admin/exams/exam-1/subjects');
     const subject = await screen.findByRole('region', { name: /Science/ });
-    expect(within(subject).getByRole('list', { name: 'Topics in Physics' })).toHaveTextContent('Electricity4 ready');
+    expect(within(subject).getByRole('list', { name: 'Topics in Science' })).toHaveTextContent('Electricity4 ready');
 
-    await userEvent.type(within(subject).getByLabelText('New topic in Physics'), 'Motion');
+    await userEvent.type(within(subject).getByLabelText('New topic in Science'), 'Motion');
     await userEvent.click(within(subject).getByRole('button', { name: 'Add topic' }));
-    expect(await screen.findByText('Motion added to Physics.')).toBeInTheDocument();
+    expect(await screen.findByText('Motion added to Science.')).toBeInTheDocument();
 
     await userEvent.click(within(subject).getByRole('button', { name: 'Archive topic Electricity' }));
     expect(await screen.findByText('Electricity archived.')).toBeInTheDocument();
@@ -383,7 +384,7 @@ describe('step 2: subjects and topics', () => {
       {
         method: 'POST',
         path: 'topics',
-        body: { moduleId: 'm1', title: 'Motion', displayOrder: 2, prerequisiteTopicIds: [] },
+        body: { subjectId: 's1', title: 'Motion', displayOrder: 2, prerequisiteTopicIds: [] },
         ifMatch: null,
       },
       { method: 'PUT', path: 'topic', body: { title: 'Electricity', displayOrder: 1, status: 'ARCHIVED' }, ifMatch: '"3"' },
@@ -466,8 +467,8 @@ describe('step 3: questions', () => {
   });
 });
 
-describe('step 4: modes', () => {
-  it('saves a mock exam’s time limit in seconds and keeps settings it doesn’t show', async () => {
+describe('step 4: exam types', () => {
+  it('saves the most questions, free attempts, the mock time limit and feedback, keeping settings it doesn’t show', async () => {
     const saved: unknown[] = [];
     mockApi({
       ...base,
@@ -489,19 +490,31 @@ describe('step 4: modes', () => {
     });
     renderRoute('/admin/exams/exam-1/modes');
     const mock = await screen.findByRole('form', { name: 'Mock exam' });
-    expect(within(mock).getByText('Needs at least 10 ready questions; this exam has 0.')).toBeInTheDocument();
-    await userEvent.click(within(mock).getByLabelText('Offer mock exam for this exam'));
-    const minutes = within(mock).getByLabelText('Time limit (minutes)');
+    await userEvent.click(within(mock).getByLabelText('Offer the mock exam for this exam'));
+    const most = within(mock).getByLabelText('Most questions in one session');
+    await userEvent.clear(most);
+    await userEvent.type(most, '30');
+    const free = within(mock).getByLabelText('Free attempts per student');
+    await userEvent.clear(free);
+    await userEvent.type(free, '2');
+    const minutes = within(mock).getByLabelText('Longest mock exam (minutes)');
     await userEvent.clear(minutes);
     await userEvent.type(minutes, '90');
+    await userEvent.selectOptions(within(mock).getByLabelText('When students see the answers'), 'IMMEDIATE');
     await userEvent.click(within(mock).getByRole('button', { name: 'Save mock exam settings' }));
     expect(await within(mock).findByText('Mock exam settings saved.')).toBeInTheDocument();
     expect(saved[0]).toMatchObject({
       enabled: true,
+      maxCount: 30,
+      minCount: 1,
+      defaultCount: 10,
+      freeAttempts: 2,
       timeLimitSeconds: 5400,
-      feedbackTiming: 'AFTER_SUBMIT',
+      feedbackTiming: 'IMMEDIATE',
       shuffleOptions: false,
     });
+    // Practice and Adaptive always show answers straight away, so they have no feedback setting.
+    expect(within(screen.getByRole('form', { name: 'Practice' })).queryByLabelText('When students see the answers')).toBeNull();
   });
 });
 

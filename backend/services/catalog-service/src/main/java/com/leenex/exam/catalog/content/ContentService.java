@@ -124,6 +124,24 @@ public class ContentService {
         return moduleView(id);
     }
 
+    /**
+     * The module new topics of a subject go into when an administrator works with Subject → Topics only: the
+     * subject's first active module, or a new one called "Topics".
+     */
+    @Transactional
+    public UUID topicModule(UUID actorId, UUID subjectId) {
+        SubjectRow subject = content.lockSubject(subjectId)
+                .orElseThrow(() -> Requests.invalid("subjectId", "subject does not exist"));
+        if (!"ACTIVE".equals(subject.status())) {
+            throw Requests.invalid("subjectId", "subject is archived");
+        }
+        return content.modules().stream()
+                .filter(m -> m.subjectId().equals(subjectId) && "ACTIVE".equals(m.status()))
+                .min(java.util.Comparator.comparingInt(ModuleRow::displayOrder).thenComparing(ModuleRow::title))
+                .map(ModuleRow::id)
+                .orElseGet(() -> createModule(actorId, subjectId, "Topics", 0).id());
+    }
+
     // --- topics -----------------------------------------------------------------------------------------------------
 
     @Transactional

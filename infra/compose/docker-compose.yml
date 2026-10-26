@@ -58,6 +58,7 @@ services:
       ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
       IDENTITY_JWT_SIGNING_KEYS: ${IDENTITY_JWT_SIGNING_KEYS:-}
       SUBSCRIPTION_SERVICE_CLIENT_SECRET: ${SUBSCRIPTION_SERVICE_CLIENT_SECRET:?set SUBSCRIPTION_SERVICE_CLIENT_SECRET in .env}
+      ASSESSMENT_SERVICE_CLIENT_SECRET: ${ASSESSMENT_SERVICE_CLIENT_SECRET:?set ASSESSMENT_SERVICE_CLIENT_SECRET in .env}
 
   catalog-service:
     <<: *service
@@ -82,6 +83,10 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/assessment
       DB_USERNAME: assessment_svc
       DB_PASSWORD: ${ASSESSMENT_DB_PASSWORD}
+      CATALOG_SERVICE_URL: http://catalog-service:8082
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:8085
+      IDENTITY_TOKEN_URI: http://identity-service:8081/oauth2/token
+      ASSESSMENT_SERVICE_CLIENT_SECRET: ${ASSESSMENT_SERVICE_CLIENT_SECRET:?set ASSESSMENT_SERVICE_CLIENT_SECRET in .env}
 
   learning-service:
     <<: *service

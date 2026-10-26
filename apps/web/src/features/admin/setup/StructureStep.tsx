@@ -17,16 +17,13 @@ import {
 import { examKeys } from '@/features/exams/api';
 import {
   catalogKeys,
-  createModule,
   createTopic,
   linkSubject,
   unlinkSubject,
-  updateModule,
   updateSubject,
   updateTopic,
   useLibrary,
   type AdminExamDetail,
-  type ModuleAdmin,
   type SubjectAdmin,
   type TopicAdmin,
 } from '@/features/admin/catalog/api';
@@ -37,7 +34,7 @@ import { setupPath } from './steps';
 
 type Run = (action: () => Promise<unknown>, done?: string) => void;
 
-/** Step 2: Subject → Module → Topic, built right here. Students choose topics; each question belongs to one topic. */
+/** Step 2: Subject → Topics, built right here. Students choose topics; each question belongs to one topic. */
 export function StructureStep({ exam }: { exam: AdminExamDetail }) {
   const queryClient = useQueryClient();
   const library = useLibrary();
@@ -83,7 +80,7 @@ export function StructureStep({ exam }: { exam: AdminExamDetail }) {
           )
         }
       >
-        Subject → Module → Topic. Students pick topics, and every question belongs to one topic.
+        Subject → Topics. Students pick topics when they start, and every question belongs to one topic.
       </StepHeading>
 
       {notice && <Alert tone="success" title={notice} />}
@@ -114,7 +111,7 @@ export function StructureStep({ exam }: { exam: AdminExamDetail }) {
         <ErrorState title="We couldn’t load the subjects" onRetry={() => void library.refetch()} />
       ) : subjects.length === 0 ? (
         <EmptyState title="No subjects yet">
-          <p>Start with a subject, such as “Science”. Then add its modules (“Biology”) and topics (“Cell structure”).</p>
+          <p>Start with a subject, such as “Science”. Then add its topics, such as “Human Body” and “Electricity”.</p>
         </EmptyState>
       ) : (
         subjects.map((subject) => (
@@ -163,8 +160,11 @@ export function StructureStep({ exam }: { exam: AdminExamDetail }) {
 function SubjectBlock({ exam, subject, run, busy }: { exam: AdminExamDetail; subject: SubjectAdmin; run: Run; busy: boolean }) {
   const [renaming, setRenaming] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const active = subject.modules.filter((m) => m.status === 'ACTIVE');
-  const archived = subject.modules.filter((m) => m.status === 'ARCHIVED');
+  const [renamingTopic, setRenamingTopic] = useState<TopicAdmin | null>(null);
+  // Topics are shown straight under the subject; modules (if a subject has any) stay in the subject library.
+  const topics = subject.modules.filter((m) => m.status === 'ACTIVE').flatMap((m) => m.topics);
+  const active = topics.filter((t) => t.status === 'ACTIVE');
+  const archived = topics.filter((t) => t.status === 'ARCHIVED');
   const headingId = `subject-${subject.id}`;
 
   return (
@@ -187,55 +187,72 @@ function SubjectBlock({ exam, subject, run, busy }: { exam: AdminExamDetail; sub
           </Button>
         </div>
       </div>
-      <div className="flex flex-col gap-5 p-4">
-        {active.length === 0 && <p className="text-muted">Add a module, such as “Biology”, to hold this subject’s topics.</p>}
-        {active.map((module) => (
-          <ModuleBlock key={module.id} module={module} run={run} busy={busy} />
-        ))}
+      <div className="flex flex-col gap-3 p-4">
+        <ul className="flex flex-wrap items-center gap-2" aria-label={`Topics in ${subject.title}`}>
+          {active.map((t) => (
+            <li
+              key={t.id}
+              className="inline-flex min-h-10 items-center gap-1 rounded-full border border-border-strong bg-surface py-0.5 pr-1 pl-3.5 text-[14.5px] font-semibold"
+            >
+              {t.title}
+              <span className={cn('ml-1 text-[13px] font-normal', t.publishedQuestionCount ? 'text-muted' : 'text-warning-ink')}>
+                {t.publishedQuestionCount} ready
+              </span>
+              <button
+                type="button"
+                className="grid size-8 place-items-center rounded-full text-muted hover:bg-surface-2"
+                aria-label={`Rename topic ${t.title}`}
+                onClick={() => setRenamingTopic(t)}
+              >
+                <Pencil aria-hidden="true" className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                className="grid size-8 place-items-center rounded-full text-muted hover:bg-surface-2"
+                aria-label={`Archive topic ${t.title}`}
+                disabled={busy}
+                onClick={() =>
+                  run(
+                    () => updateTopic(t.id, t.version, { title: t.title, displayOrder: t.displayOrder, status: 'ARCHIVED' }),
+                    `${t.title} archived.`,
+                  )
+                }
+              >
+                <Archive aria-hidden="true" className="size-3.5" />
+              </button>
+            </li>
+          ))}
+          {active.length === 0 && <li className="text-[14.5px] text-muted">No topics yet. Add one below, such as “Human Body”.</li>}
+        </ul>
         {archived.length > 0 && (
-          <details>
-            <summary className="cursor-pointer text-[14.5px] font-semibold text-muted">
-              Archived modules ({archived.length})
-            </summary>
-            <ul className="mt-2 flex flex-col gap-2">
-              {archived.map((m) => (
-                <li key={m.id} className="flex flex-wrap items-center gap-2 text-muted">
-                  {m.title}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      run(
-                        () =>
-                          updateModule(m.id, m.version, {
-                            title: m.title,
-                            displayOrder: m.displayOrder,
-                            status: 'ACTIVE',
-                          }),
-                        `${m.title} restored.`,
-                      )
-                    }
-                  >
-                    <ArchiveRestore aria-hidden="true" className="size-4" /> Restore
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          </details>
+          <p className="flex flex-wrap items-center gap-2 text-[14px] text-muted">
+            Archived:
+            {archived.map((t) => (
+              <Button
+                key={t.id}
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                aria-label={`Restore topic ${t.title}`}
+                onClick={() =>
+                  run(
+                    () => updateTopic(t.id, t.version, { title: t.title, displayOrder: t.displayOrder, status: 'ACTIVE' }),
+                    `${t.title} restored.`,
+                  )
+                }
+              >
+                {t.title} <ArchiveRestore aria-hidden="true" className="size-4" />
+              </Button>
+            ))}
+          </p>
         )}
         <AddByName
-          label={`New module in ${subject.title}`}
-          button="Add module"
-          placeholder={`New module in ${subject.title}`}
+          label={`New topic in ${subject.title}`}
+          button="Add topic"
+          placeholder={`New topic in ${subject.title}`}
           onAdd={(title) =>
             run(
-              () =>
-                createModule({
-                  subjectId: subject.id,
-                  title,
-                  displayOrder: subject.modules.length + 1,
-                }),
+              () => createTopic({ subjectId: subject.id, title, displayOrder: topics.length + 1, prerequisiteTopicIds: [] }),
               `${title} added to ${subject.title}.`,
             )
           }
@@ -244,6 +261,17 @@ function SubjectBlock({ exam, subject, run, busy }: { exam: AdminExamDetail; sub
         />
       </div>
 
+      <RenameDialog
+        open={renamingTopic !== null}
+        what="topic"
+        current={renamingTopic?.title ?? ''}
+        onClose={() => setRenamingTopic(null)}
+        onSave={(title) => {
+          const target = renamingTopic;
+          setRenamingTopic(null);
+          if (target) run(() => updateTopic(target.id, target.version, { title, displayOrder: target.displayOrder }), 'Topic renamed.');
+        }}
+      />
       <RenameDialog
         open={renaming}
         what="subject"
@@ -266,7 +294,7 @@ function SubjectBlock({ exam, subject, run, busy }: { exam: AdminExamDetail; sub
         open={removing}
         onClose={() => setRemoving(false)}
         title={`Remove ${subject.title} from ${exam.title}?`}
-        description="Its modules, topics and questions are kept, and you can add it back later with “Use a subject from another exam”."
+        description="Its topics and questions are kept, and you can add it back later with “Use a subject from another exam”."
         footer={
           <>
             <Button variant="secondary" onClick={() => setRemoving(false)}>
@@ -285,160 +313,6 @@ function SubjectBlock({ exam, subject, run, busy }: { exam: AdminExamDetail; sub
         }
       />
     </section>
-  );
-}
-
-function ModuleBlock({ module, run, busy }: { module: ModuleAdmin; run: Run; busy: boolean }) {
-  const [renaming, setRenaming] = useState<TopicAdmin | 'module' | null>(null);
-  const active = module.topics.filter((t) => t.status === 'ACTIVE');
-  const archived = module.topics.filter((t) => t.status === 'ARCHIVED');
-  const headingId = `module-${module.id}`;
-
-  return (
-    <div role="group" aria-labelledby={headingId} className="flex flex-col gap-2.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <h4 id={headingId} className="font-bold">
-          {module.title}
-        </h4>
-        <Button variant="ghost" size="sm" onClick={() => setRenaming('module')} aria-label={`Rename module ${module.title}`}>
-          <Pencil aria-hidden="true" className="size-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={busy}
-          aria-label={`Archive module ${module.title}`}
-          onClick={() =>
-            run(
-              () =>
-                updateModule(module.id, module.version, {
-                  title: module.title,
-                  displayOrder: module.displayOrder,
-                  status: 'ARCHIVED',
-                }),
-              `${module.title} archived. Its topics are hidden from students.`,
-            )
-          }
-        >
-          <Archive aria-hidden="true" className="size-4" />
-        </Button>
-      </div>
-      <ul className="flex flex-wrap items-center gap-2" aria-label={`Topics in ${module.title}`}>
-        {active.map((t) => (
-          <li
-            key={t.id}
-            className="inline-flex min-h-10 items-center gap-1 rounded-full border border-border-strong bg-surface py-0.5 pr-1 pl-3.5 text-[14.5px] font-semibold"
-          >
-            {t.title}
-            <span className={cn('ml-1 text-[13px] font-normal', t.publishedQuestionCount ? 'text-muted' : 'text-warning-ink')}>
-              {t.publishedQuestionCount} ready
-            </span>
-            <button
-              type="button"
-              className="grid size-8 place-items-center rounded-full text-muted hover:bg-surface-2"
-              aria-label={`Rename topic ${t.title}`}
-              onClick={() => setRenaming(t)}
-            >
-              <Pencil aria-hidden="true" className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              className="grid size-8 place-items-center rounded-full text-muted hover:bg-surface-2"
-              aria-label={`Archive topic ${t.title}`}
-              disabled={busy}
-              onClick={() =>
-                run(
-                  () =>
-                    updateTopic(t.id, t.version, {
-                      title: t.title,
-                      displayOrder: t.displayOrder,
-                      status: 'ARCHIVED',
-                    }),
-                  `${t.title} archived.`,
-                )
-              }
-            >
-              <Archive aria-hidden="true" className="size-3.5" />
-            </button>
-          </li>
-        ))}
-        {active.length === 0 && <li className="text-[14.5px] text-muted">No topics yet.</li>}
-      </ul>
-      {archived.length > 0 && (
-        <p className="flex flex-wrap items-center gap-2 text-[14px] text-muted">
-          Archived:
-          {archived.map((t) => (
-            <Button
-              key={t.id}
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              aria-label={`Restore topic ${t.title}`}
-              onClick={() =>
-                run(
-                  () =>
-                    updateTopic(t.id, t.version, {
-                      title: t.title,
-                      displayOrder: t.displayOrder,
-                      status: 'ACTIVE',
-                    }),
-                  `${t.title} restored.`,
-                )
-              }
-            >
-              {t.title} <ArchiveRestore aria-hidden="true" className="size-4" />
-            </Button>
-          ))}
-        </p>
-      )}
-      <AddByName
-        label={`New topic in ${module.title}`}
-        button="Add topic"
-        placeholder={`New topic in ${module.title}`}
-        onAdd={(title) =>
-          run(
-            () =>
-              createTopic({
-                moduleId: module.id,
-                title,
-                displayOrder: module.topics.length + 1,
-                prerequisiteTopicIds: [],
-              }),
-            `${title} added to ${module.title}.`,
-          )
-        }
-        busy={busy}
-        compact
-      />
-      <RenameDialog
-        open={renaming !== null}
-        what={renaming === 'module' ? 'module' : 'topic'}
-        current={renaming === 'module' ? module.title : (renaming?.title ?? '')}
-        onClose={() => setRenaming(null)}
-        onSave={(title) => {
-          const target = renaming;
-          setRenaming(null);
-          if (target === 'module')
-            run(
-              () =>
-                updateModule(module.id, module.version, {
-                  title,
-                  displayOrder: module.displayOrder,
-                }),
-              'Module renamed.',
-            );
-          else if (target)
-            run(
-              () =>
-                updateTopic(target.id, target.version, {
-                  title,
-                  displayOrder: target.displayOrder,
-                }),
-              'Topic renamed.',
-            );
-        }}
-      />
-    </div>
   );
 }
 

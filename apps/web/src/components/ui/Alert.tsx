@@ -1,14 +1,15 @@
 import type { ReactNode } from 'react';
-import { CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react';
+import { CircleAlert, CircleCheck, Info, Lock, TriangleAlert } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
-export type AlertTone = 'info' | 'warning' | 'success' | 'error';
+export type AlertTone = 'info' | 'warning' | 'success' | 'error' | 'premium';
 
 const styles: Record<AlertTone, { box: string; Icon: typeof Info }> = {
   info: { box: 'bg-primary-soft border-[#c9d4f7] text-primary-ink', Icon: Info },
   warning: { box: 'bg-warning-soft border-[#f2d8a6] text-warning-ink', Icon: TriangleAlert },
   success: { box: 'bg-success-soft border-[#bfe3cb] text-success-ink', Icon: CircleCheck },
   error: { box: 'bg-danger-soft border-[#f1c2c0] text-danger-ink', Icon: CircleAlert },
+  premium: { box: 'bg-premium-soft border-[#d9ccfb] text-premium-ink', Icon: Lock },
 };
 
 export interface AlertProps {
