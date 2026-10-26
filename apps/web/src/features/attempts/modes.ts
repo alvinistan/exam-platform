@@ -30,6 +30,9 @@ export function minuteChoices(limitSeconds: number | null | undefined): number[]
 
 export const difficultyLabels = { SIMPLE: 'Easy', MEDIUM: 'Medium', HARD: 'Hard' } as const;
 
+/** A student's level on a topic (ADR-016), shown with the same words as question difficulty. */
+export const levelLabels: Record<number, string> = { 1: 'Easy', 2: 'Medium', 3: 'Hard' };
+
 /** "12:05" or "1:02:05". */
 export function clock(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));

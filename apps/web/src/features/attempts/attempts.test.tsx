@@ -35,6 +35,7 @@ function question(position: number, extra: Record<string, unknown> = {}) {
     flagged: false,
     answered: false,
     review: null,
+    level: 2,
     ...extra,
   };
 }
@@ -70,6 +71,7 @@ function attempt(extra: Record<string, unknown> = {}) {
     topics: [{ id: 't1', title: 'Dosage by weight' }],
     questions: [question(1), question(2), question(3)],
     result: null,
+    plannedCount: 3,
     ...extra,
   };
 }
@@ -85,8 +87,28 @@ const result = {
   passed: null,
   durationSeconds: 95,
   byTopic: [
-    { topicId: 't1', title: 'Dosage by weight', total: 2, correct: 1, incorrect: 1, unanswered: 0, percent: 50 },
-    { topicId: 't2', title: 'IV flow rates', total: 1, correct: 0, incorrect: 0, unanswered: 1, percent: 0 },
+    {
+      topicId: 't1',
+      title: 'Dosage by weight',
+      total: 2,
+      correct: 1,
+      incorrect: 1,
+      unanswered: 0,
+      percent: 50,
+      level: 2,
+      levelLabel: 'Medium',
+    },
+    {
+      topicId: 't2',
+      title: 'IV flow rates',
+      total: 1,
+      correct: 0,
+      incorrect: 0,
+      unanswered: 1,
+      percent: 0,
+      level: 1,
+      levelLabel: 'Easy',
+    },
   ],
 };
 
@@ -266,6 +288,7 @@ describe('practice: one question at a time with instant answers', () => {
     expect(screen.getByText('33%')).toBeInTheDocument();
     expect(screen.getByText(/Revise next:/).parentElement).toHaveTextContent('IV flow rates');
     expect(screen.getByRole('meter', { name: 'Dosage by weight: 1 of 2 correct' })).toHaveAttribute('aria-valuenow', '50');
+    expect(screen.getAllByText(/Your level:/)).toHaveLength(2);
 
     await userEvent.click(screen.getByRole('tab', { name: 'Incorrect (1)' }));
     expect(screen.queryByText('Question text 1')).not.toBeInTheDocument();
@@ -274,6 +297,42 @@ describe('practice: one question at a time with instant answers', () => {
       'href',
       '/exams/nursing-licensure/start/practice',
     );
+  });
+});
+
+describe('adaptive exam', () => {
+  it('fetches each next question after an answer, chosen for the student’s level', async () => {
+    let given = 1;
+    const adaptive = () =>
+      attempt({
+        mode: 'USER_FRIENDLY',
+        plannedCount: 3,
+        questions: Array.from({ length: given }, (_, i) =>
+          i < given - 1
+            ? question(i + 1, { selected: ['A'], answered: true, review: review(true) })
+            : question(i + 1, { level: i === 1 ? 3 : 2 }),
+        ),
+      });
+    mockApi({
+      ...signedIn(),
+      'GET /api/attempts/att-1': () => jsonResponse(adaptive()),
+      'PUT /api/attempts/att-1/answers/1': () => {
+        given = 2;
+        return jsonResponse(question(1, { selected: ['A'], answered: true, review: review(true) }));
+      },
+    });
+    renderRoute('/attempts/att-1');
+    expect(await screen.findByText('Question 1 of 3')).toBeInTheDocument();
+    expect(screen.getByText('Chosen for your Medium level on this topic')).toBeInTheDocument();
+    // No skipping ahead: the next question doesn't exist until this one is answered.
+    expect(screen.queryByRole('button', { name: /Skip/ })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('radio', { name: /Arteries/ }));
+    expect(await screen.findByText('Correct!')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Next question/ })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: /Next question/ }));
+    expect(await screen.findByText('Question 2 of 3')).toBeInTheDocument();
+    expect(screen.getByText('Chosen for your Hard level on this topic')).toBeInTheDocument();
   });
 });
 

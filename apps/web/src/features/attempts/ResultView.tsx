@@ -115,6 +115,9 @@ export function ResultView({ attempt }: { attempt: Attempt }) {
         <Link to={`/exams/${attempt.examSlug}`} className={buttonClasses('secondary')}>
           Back to the exam
         </Link>
+        <Link to={`/progress?exam=${attempt.examId}`} className={buttonClasses('ghost')}>
+          My progress
+        </Link>
       </div>
 
       <section aria-labelledby="review-heading" className="flex flex-col gap-4">
@@ -204,7 +207,7 @@ function ScoreRing({ percent }: { percent: number }) {
 function TopicRow({ topic }: { topic: TopicResult }) {
   const weak = topic.percent < WEAK_BELOW;
   return (
-    <div className="grid gap-2 px-5 py-3.5 sm:grid-cols-[minmax(160px,1fr)_2fr_auto] sm:items-center sm:gap-4">
+    <div className="grid gap-2 px-5 py-3.5 sm:grid-cols-[minmax(160px,1fr)_2fr_auto_auto] sm:items-center sm:gap-4">
       <span className="font-semibold">{topic.title}</span>
       <div
         role="meter"
@@ -220,6 +223,11 @@ function TopicRow({ topic }: { topic: TopicResult }) {
         {topic.correct} / {topic.total}
         {weak && <Badge tone="warning">Revise</Badge>}
       </span>
+      {topic.level && (
+        <span className="text-[13.5px] text-muted">
+          Your level: <strong className="text-ink">{topic.levelLabel}</strong>
+        </span>
+      )}
     </div>
   );
 }

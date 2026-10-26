@@ -30,7 +30,7 @@ spring:
             - id: assessment
               uri: ${ASSESSMENT_SERVICE_URL:http://localhost:8083}
               predicates:
-                - Path=/api/attempts/**,/api/admin/attempts/**
+                - Path=/api/attempts/**,/api/progress/**,/api/admin/attempts/**
             - id: learning
               uri: ${LEARNING_SERVICE_URL:http://localhost:8084}
               predicates:

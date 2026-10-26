@@ -1,5 +1,18 @@
 # Changelog
 
+## Phase 9 (Step B) — Adaptive difficulty per topic and My progress
+
+- **Levels per topic (ADR-016):** every student starts each topic at Medium. After at least 5 answers since the last change, 80%+ correct (of the last 8) moves the topic up a level and below 40% moves it down, one step at a time.
+- **All three exam types use the levels:** level 1 asks mostly Easy questions, level 2 a balanced mix, level 3 mostly Hard. If a difficulty runs out, the nearest one is used.
+- **Repeated mistakes:** in Practice and Adaptive exams, questions answered wrong last time come back first (after a day, at most about a quarter of a session). In an Adaptive exam, topics that need work get twice the share. Mock exams never repeat mistakes on purpose.
+- **Adaptive exam reacts within the session:** each question is chosen on the server after the previous answer, using the level that already includes it. The planned length is fixed at start; it ends early if a topic runs out of questions.
+- **My progress** (`/progress`, in the account menu):
+  - per exam: questions answered, overall accuracy, and each topic's level (with an up/down trend), accuracy over the last 8 and all answers, and status (Strong / Developing / Needs work / Just started);
+  - a "Practise next" card with a one-click session on the weak topics;
+  - recent results as bars that open each attempt.
+- **Results** show the student's level on each topic now. Questions in an Adaptive exam say which level they were chosen for.
+- **Backend:** `GET /api/progress/exams` and `GET /api/progress/exams/{examId}` (assessment-service, routed by the gateway), migration V3 (`planned_count`, `target_level`), `TopicLevels`, `LearningProfile`, and a reworked `QuestionPicker`.
+
 ## Phase 9 (Step A) — Exam flow for Practice, Mock and Adaptive exams
 
 Students can now take exams. Built from the client's O/L Science requirements and the Adaptive Exam System spec.

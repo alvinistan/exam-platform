@@ -285,8 +285,10 @@ class AttemptTests {
     @Test
     void aTimeBasedSessionIsSizedFromEstimatedSolvingTimes() throws Exception {
         MockHttpServletResponse three = expect(start("USER_FRIENDLY", List.of(ELECTRICITY), "TIME", 3), 201);
-        assertThat((List<Object>) read(three, "$.questions")).hasSize(3);
-        assertThat((Integer) read(three, "$.estimatedSeconds")).isEqualTo(180);
+        // Three 60-second questions fit; an Adaptive exam gives them one at a time.
+        assertThat((Integer) read(three, "$.plannedCount")).isEqualTo(3);
+        assertThat((List<Object>) read(three, "$.questions")).hasSize(1);
+        assertThat((Integer) read(three, "$.estimatedSeconds")).isEqualTo(60);
         assertThat((Integer) read(three, "$.requestedMinutes")).isEqualTo(3);
         assertThat((Object) read(three, "$.expiresAt")).isNull(); // only mock exams have a hard end
         assertThat((String) read(three, "$.feedback")).isEqualTo("IMMEDIATE");
@@ -361,6 +363,73 @@ class AttemptTests {
         assertThat(jdbc.queryForObject("SELECT finish_reason FROM attempt WHERE id = ?::uuid", String.class, mock)).isEqualTo("EXPIRED");
         assertThat(jdbc.queryForObject("SELECT finish_reason FROM attempt WHERE id = ?::uuid", String.class, practice)).isEqualTo("ABANDONED");
         assertThat(attempts.finishDue()).isZero();
+    }
+
+    // --- adaptive (Step B) -------------------------------------------------------------------------------------------
+
+    @Test
+    void anAdaptiveExamChoosesEachQuestionAfterThePreviousAnswerAndRaisesTheLevel() throws Exception {
+        MockHttpServletResponse started = expect(start("USER_FRIENDLY", List.of(HUMAN_BODY), "COUNT", 6), 201);
+        String id = read(started, "$.id");
+        assertThat((List<Object>) read(started, "$.questions")).hasSize(1);
+        assertThat((Integer) read(started, "$.plannedCount")).isEqualTo(6);
+        assertThat((Integer) read(started, "$.questions[0].level")).isEqualTo(2); // everyone starts at Medium
+
+        for (int position = 1; position <= 6; position++) {
+            MockHttpServletResponse now = expect(call(get("/api/attempts/" + id), token, null), 200);
+            assertThat((List<Object>) read(now, "$.questions")).hasSize(position);
+            expect(answer(id, position, List.of(letter(now, position, true))), 200);
+        }
+        MockHttpServletResponse all = expect(call(get("/api/attempts/" + id), token, null), 200);
+        assertThat((List<Object>) read(all, "$.questions")).hasSize(6);
+        // Five right answers on Human Body: the sixth question was chosen at the Hard level.
+        assertThat((List<Integer>) read(all, "$.questions[*].level")).containsExactly(2, 2, 2, 2, 2, 3);
+        assertThat(new HashSet<>((List<String>) read(all, "$.questions[*].topicId"))).containsOnly(HUMAN_BODY.toString());
+
+        MockHttpServletResponse done = expect(call(post("/api/attempts/" + id + "/submit"), token, null), 200);
+        assertThat((Integer) read(done, "$.result.correct")).isEqualTo(6);
+        assertThat((String) read(done, "$.result.byTopic[0].levelLabel")).isEqualTo("Hard");
+
+        MockHttpServletResponse progress = expect(call(get("/api/progress/exams/" + EXAM), token, null), 200);
+        assertThat((Integer) read(progress, "$.answered")).isEqualTo(6);
+        assertThat((Integer) read(progress, "$.topics[0].level")).isEqualTo(3);
+        assertThat((String) read(progress, "$.topics[0].status")).isEqualTo("STRONG");
+        assertThat((Integer) read(progress, "$.topics[0].levelTrend")).isEqualTo(1);
+        assertThat((List<Object>) read(progress, "$.sessions")).hasSize(1);
+        assertThat((String) read(expect(call(get("/api/progress/exams"), token, null), 200), "$[0].title")).isEqualTo("O/L Science");
+    }
+
+    @Test
+    void anAdaptiveExamEndsEarlyWhenTheTopicRunsOutOfQuestions() throws Exception {
+        // Only six Electricity questions exist; asking for ten plans six.
+        MockHttpServletResponse started = expect(start("USER_FRIENDLY", List.of(ELECTRICITY), "COUNT", 10), 201);
+        assertThat((Integer) read(started, "$.plannedCount")).isEqualTo(6);
+    }
+
+    @Test
+    void wrongAnswersLowerTheLevelAndMarkTheTopicForWork() throws Exception {
+        String id = read(expect(start("PRACTICE", List.of(ELECTRICITY), "COUNT", 5), 201), "$.id");
+        MockHttpServletResponse attempt = expect(call(get("/api/attempts/" + id), token, null), 200);
+        for (int position = 1; position <= 5; position++) {
+            expect(answer(id, position, List.of(letter(attempt, position, false))), 200);
+        }
+        MockHttpServletResponse progress = expect(call(get("/api/progress/exams/" + EXAM), token, null), 200);
+        assertThat((String) read(progress, "$.topics[0].levelLabel")).isEqualTo("Easy");
+        assertThat((String) read(progress, "$.topics[0].status")).isEqualTo("NEEDS_WORK");
+        assertThat((List<String>) read(progress, "$.focus")).containsExactly(ELECTRICITY.toString());
+        // The session isn't finished, but checked practice answers already count.
+        assertThat((List<Object>) read(progress, "$.sessions")).isEmpty();
+    }
+
+    @Test
+    void mockAnswersCountOnlyOnceThePaperIsFinished() throws Exception {
+        MockHttpServletResponse started = expect(start("MOCK", List.of(), "COUNT", 2), 201);
+        String id = read(started, "$.id");
+        expect(answer(id, 1, List.of(letter(started, 1, true))), 200);
+        assertThat((Integer) read(expect(call(get("/api/progress/exams/" + EXAM), token, null), 200), "$.answered")).isZero();
+        expect(call(post("/api/attempts/" + id + "/submit"), token, null), 200);
+        assertThat((Integer) read(expect(call(get("/api/progress/exams/" + EXAM), token, null), 200), "$.answered")).isEqualTo(1);
+        expect(call(get("/api/progress/exams"), null, null), 401);
     }
 
     // --- stub ---------------------------------------------------------------------------------------------------------

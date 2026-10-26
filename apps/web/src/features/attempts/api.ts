@@ -31,6 +31,8 @@ export interface AttemptQuestion {
   answered: boolean;
   /** Present once the answer was checked, or the attempt is finished. */
   review: Review | null;
+  /** The student's level on the topic when the question was chosen: 1 Easy, 2 Medium, 3 Hard. */
+  level: number | null;
 }
 
 export interface TopicResult {
@@ -41,6 +43,9 @@ export interface TopicResult {
   incorrect: number;
   unanswered: number;
   percent: number;
+  /** The student's level on the topic now, after this attempt. */
+  level: number;
+  levelLabel: string;
 }
 
 export interface AttemptResult {
@@ -76,6 +81,8 @@ export interface Attempt {
   topics: { id: string; title: string }[];
   questions: AttemptQuestion[];
   result: AttemptResult | null;
+  /** Questions the attempt will have. An Adaptive exam gets them one at a time, so `questions` may hold fewer. */
+  plannedCount: number;
 }
 
 export interface AttemptSummary {

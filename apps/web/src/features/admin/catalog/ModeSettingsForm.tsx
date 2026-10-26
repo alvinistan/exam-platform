@@ -27,9 +27,9 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 const descriptions: Record<Mode, string> = {
-  PRACTICE: 'Students pick topics and a number of questions or minutes, answer one question at a time and see each answer straight away.',
-  MOCK: 'A timed paper under exam conditions, with a countdown kept by the server.',
-  USER_FRIENDLY: 'One question at a time with instant answers. Difficulty that adapts to each student’s results comes in the next update.',
+  PRACTICE: 'Students pick topics and a number of questions or minutes, answer one question at a time and see each answer straight away. Difficulty follows each student’s level per topic.',
+  MOCK: 'A timed paper under exam conditions, with a countdown kept by the server. Difficulty follows each student’s level per topic.',
+  USER_FRIENDLY: 'One question at a time with instant answers. Each question is chosen after the last answer, at the student’s level on that topic, with more questions on weak topics.',
 };
 
 function toValues(s: ModeSettings): FormValues {

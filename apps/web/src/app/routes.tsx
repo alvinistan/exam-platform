@@ -11,6 +11,7 @@ import {
   ExamSetupIndex,
   ExamSetupPage,
   NewExamPage,
+  ProgressPage,
   QuestionEditorPage,
   QuestionImportPage,
   QuestionsPage,
@@ -40,6 +41,14 @@ export const routes: RouteObject[] = [
         element: (
           <RequireAuth>
             <StartPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'progress',
+        element: (
+          <RequireAuth>
+            <ProgressPage />
           </RequireAuth>
         ),
       },

@@ -7,7 +7,7 @@ import { formatDuration } from '@/features/exams/format';
 import { QuestionView } from '@/features/questions/QuestionView';
 import { ApiError } from '@/lib/api/problem';
 import { attemptKeys, saveAnswer, submitAttempt, type Attempt, type AttemptQuestion } from './api';
-import { difficultyLabels } from './modes';
+import { difficultyLabels, levelLabels } from './modes';
 import { Countdown } from './Countdown';
 import { toViewQuestion, useQuestionTimer, useSecondsLeft } from './hooks';
 
@@ -21,9 +21,11 @@ const AUTO_NEXT_MS = 2500;
  */
 export function StepPlayer({ attempt }: { attempt: Attempt }) {
   const queryClient = useQueryClient();
-  const total = attempt.questions.length;
+  // An Adaptive exam gets each question after the previous answer, so fewer than planned may be here yet.
+  const total = Math.max(attempt.plannedCount, attempt.questions.length);
+  const adaptive = attempt.mode === 'USER_FRIENDLY';
   const firstOpen = attempt.questions.findIndex((q) => !q.review);
-  const [index, setIndex] = useState(firstOpen === -1 ? total - 1 : firstOpen);
+  const [index, setIndex] = useState(firstOpen === -1 ? attempt.questions.length - 1 : firstOpen);
   const [confirming, setConfirming] = useState(false);
   const question = attempt.questions[index] ?? attempt.questions[0];
   const secondsLeft = useSecondsLeft(attempt);
@@ -36,7 +38,11 @@ export function StepPlayer({ attempt }: { attempt: Attempt }) {
 
   const check = useMutation({
     mutationFn: (selected: string[]) => saveAnswer(attempt.id, question?.position ?? 1, { selected, timeSpentMs: takeTime() }),
-    onSuccess: replace,
+    onSuccess: (updated) => {
+      replace(updated);
+      // The server has chosen the next question from this answer: fetch it.
+      if (adaptive) void queryClient.invalidateQueries({ queryKey: attemptKeys.one(attempt.id) });
+    },
     onError: (e) => {
       if (e instanceof ApiError && (e.code === 'ATTEMPT_EXPIRED' || e.code === 'ATTEMPT_FINISHED')) {
         void queryClient.invalidateQueries({ queryKey: attemptKeys.one(attempt.id) });
@@ -63,8 +69,12 @@ export function StepPlayer({ attempt }: { attempt: Attempt }) {
   if (!question) return null;
   const answered = attempt.questions.filter((q) => q.review).length;
   const correct = attempt.questions.filter((q) => q.review?.correct).length;
-  const last = index === total - 1;
-  const goNext = () => (last ? setConfirming(true) : setIndex(index + 1));
+  const last = index >= total - 1;
+  const nextReady = last || attempt.questions[index + 1] !== undefined;
+  const goNext = () => {
+    if (last) setConfirming(true);
+    else if (nextReady) setIndex(index + 1);
+  };
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5 px-4 py-6 sm:px-8 sm:py-8">
@@ -112,6 +122,11 @@ export function StepPlayer({ attempt }: { attempt: Attempt }) {
         <div className="flex flex-wrap gap-2">
           <Badge tone="primary">{question.topicTitle}</Badge>
           <Badge>{difficultyLabels[question.difficulty]}</Badge>
+          {adaptive && question.level && (
+            <span className="self-center text-[13px] text-muted">
+              Chosen for your {levelLabels[question.level]} level on this topic
+            </span>
+          )}
         </div>
         <QuestionStep
           key={question.position}
@@ -130,6 +145,7 @@ export function StepPlayer({ attempt }: { attempt: Attempt }) {
             key={`f${question.position}`}
             question={question}
             last={last}
+            nextReady={nextReady}
             onNext={goNext}
             autoNext={question.review.correct === true}
           />
@@ -140,7 +156,7 @@ export function StepPlayer({ attempt }: { attempt: Attempt }) {
         <Button variant="ghost" disabled={index === 0} onClick={() => setIndex(index - 1)}>
           ← Previous
         </Button>
-        {!question.review && !last && (
+        {!question.review && !last && !adaptive && (
           <Button variant="ghost" onClick={() => setIndex(index + 1)}>
             Skip <ArrowRight aria-hidden="true" className="size-4" />
           </Button>
@@ -215,11 +231,14 @@ function QuestionStep(props: {
 function Feedback({
   question,
   last,
+  nextReady,
   onNext,
   autoNext,
 }: {
   question: AttemptQuestion;
   last: boolean;
+  /** False while an Adaptive exam's next question is still being chosen. */
+  nextReady: boolean;
   onNext: () => void;
   autoNext: boolean;
 }) {
@@ -235,10 +254,10 @@ function Feedback({
     nextRef.current?.focus();
   }, []);
   useEffect(() => {
-    if (!waiting) return;
+    if (!waiting || !nextReady) return;
     const id = window.setTimeout(() => next.current(), AUTO_NEXT_MS);
     return () => window.clearTimeout(id);
-  }, [waiting]);
+  }, [waiting, nextReady]);
   if (!review) return null;
   return (
     <div className="flex flex-col gap-3 border-t border-border pt-4" aria-live="polite">
@@ -252,7 +271,7 @@ function Feedback({
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <Button ref={nextRef} onClick={onNext}>
+        <Button ref={nextRef} onClick={onNext} loading={!nextReady}>
           {last ? 'See results' : 'Next question'} <ArrowRight aria-hidden="true" className="size-4" />
         </Button>
         {waiting && (

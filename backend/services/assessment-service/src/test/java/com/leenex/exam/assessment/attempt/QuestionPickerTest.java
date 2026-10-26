@@ -2,6 +2,8 @@ package com.leenex.exam.assessment.attempt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.leenex.exam.assessment.attempt.QuestionPicker.Choice;
+import com.leenex.exam.assessment.attempt.QuestionPicker.Context;
 import com.leenex.exam.assessment.attempt.QuestionPicker.Picked;
 import com.leenex.exam.assessment.attempt.QuestionPicker.Size;
 import com.leenex.exam.assessment.client.CatalogClient.PoolOption;
@@ -25,8 +27,76 @@ class QuestionPickerTest {
     static final UUID C = UUID.randomUUID();
 
     static PoolQuestion q(UUID topic, int seconds) {
-        return new PoolQuestion(UUID.randomUUID(), UUID.randomUUID(), topic, "SINGLE", "MEDIUM", seconds, BigDecimal.ONE,
+        return q(topic, seconds, "MEDIUM");
+    }
+
+    static PoolQuestion q(UUID topic, int seconds, String difficulty) {
+        return new PoolQuestion(UUID.randomUUID(), UUID.randomUUID(), topic, "SINGLE", difficulty, seconds, BigDecimal.ONE,
                 List.of(new PoolOption("A", true, null), new PoolOption("B", false, null)));
+    }
+
+    /** {@code each} questions of every difficulty in the topic. */
+    static List<PoolQuestion> mixed(UUID topic, int each) {
+        List<PoolQuestion> list = new ArrayList<>();
+        for (String d : List.of("SIMPLE", "MEDIUM", "HARD")) {
+            for (int i = 0; i < each; i++) {
+                list.add(q(topic, 60, d));
+            }
+        }
+        return list;
+    }
+
+    static long count(List<PoolQuestion> qs, String difficulty) {
+        return qs.stream().filter(x -> x.difficulty().equals(difficulty)).count();
+    }
+
+    @Test
+    void theStudentsLevelOnATopicDecidesTheDifficulty() {
+        List<PoolQuestion> pool = new ArrayList<>(mixed(A, 80));
+        pool.addAll(mixed(B, 80));
+        Context ctx = new Context(java.util.Map.of(A, 1, B, 3), java.util.Map.of(), Set.of(), Set.of(), false);
+        // 100 questions per topic, so the proportions are reliable: about 70/30 and 40/60.
+        List<PoolQuestion> chosen = QuestionPicker.pick(pool, ctx, Size.count(200), 200, false, new Random(42)).questions();
+        List<PoolQuestion> easyTopic = chosen.stream().filter(x -> x.topicId().equals(A)).toList();
+        List<PoolQuestion> hardTopic = chosen.stream().filter(x -> x.topicId().equals(B)).toList();
+        assertThat(easyTopic).hasSize(100);
+        assertThat(count(easyTopic, "HARD")).isZero();
+        assertThat(count(easyTopic, "SIMPLE")).isBetween(55L, 85L);
+        assertThat(count(hardTopic, "SIMPLE")).isZero();
+        assertThat(count(hardTopic, "HARD")).isBetween(45L, 75L);
+    }
+
+    @Test
+    void whenADifficultyRunsOutTheNearestOneIsUsed() {
+        List<PoolQuestion> pool = new ArrayList<>(List.of(q(A, 60, "SIMPLE"), q(A, 60, "MEDIUM")));
+        Context hard = new Context(java.util.Map.of(A, 3), java.util.Map.of(), Set.of(), Set.of(), false);
+        Choice first = QuestionPicker.next(pool, List.of(), hard, null, new Random(1)).orElseThrow();
+        assertThat(first.question().difficulty()).isEqualTo("MEDIUM");
+        assertThat(first.level()).isEqualTo(3);
+    }
+
+    @Test
+    void questionsAnsweredWrongComeBackFirstButNeverTakeOverTheSession() {
+        List<PoolQuestion> pool = mixed(A, 10);
+        Set<UUID> retry = pool.stream().limit(12).map(PoolQuestion::questionId).collect(Collectors.toSet());
+        Context ctx = new Context(java.util.Map.of(), java.util.Map.of(), retry, retry, true);
+        List<PoolQuestion> twelve = QuestionPicker.pick(pool, ctx, Size.count(12), 30, false, new Random(3)).questions();
+        long retried = twelve.stream().filter(x -> retry.contains(x.questionId())).count();
+        assertThat(retried).isBetween(3L, 4L); // about a quarter
+        assertThat(retry).contains(twelve.getFirst().questionId());
+        // A mock exam doesn't repeat mistakes on purpose.
+        Context mock = new Context(java.util.Map.of(), java.util.Map.of(), retry, retry, false);
+        List<PoolQuestion> mockSet = QuestionPicker.pick(pool, mock, Size.count(12), 30, false, new Random(3)).questions();
+        assertThat(mockSet.stream().filter(x -> retry.contains(x.questionId()))).isEmpty();
+    }
+
+    @Test
+    void weakTopicsGetTwiceTheShare() {
+        List<PoolQuestion> pool = new ArrayList<>(mixed(A, 10));
+        pool.addAll(mixed(B, 10));
+        Context ctx = new Context(java.util.Map.of(), java.util.Map.of(A, 2), Set.of(), Set.of(), false);
+        List<PoolQuestion> chosen = QuestionPicker.pick(pool, ctx, Size.count(12), 30, false, new Random(5)).questions();
+        assertThat(chosen.stream().filter(x -> x.topicId().equals(A))).hasSize(8);
     }
 
     static List<PoolQuestion> pool(UUID topic, int count, int seconds) {
