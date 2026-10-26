@@ -118,7 +118,7 @@ function PremiumAccessCard() {
       <div>
         <h2 className="text-lg font-bold">Premium access for students</h2>
         <p className="text-[14.5px] text-muted">
-          Give a student Premium by hand, for example for a trial or a school. Paid plans arrive in a later phase.
+          Give a student Premium by hand, for example for a trial or a school. Paid plans are set up under Plans &amp; payments.
         </p>
       </div>
       <GrantForm />

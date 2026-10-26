@@ -1,6 +1,6 @@
 # ADR-011: Payments through a provider-neutral port and hosted checkout
 
-- **Status:** Accepted (Phase 3, 11 Oct 2026)
+- **Status:** Accepted (Phase 3, 11 Oct 2026); amended in Phase 11 (26 Oct 2026) for PayHere
 - **Deciders:** Product owner (client), development lead
 
 ## Context
@@ -18,3 +18,25 @@ PCI scope stays with the provider (SAQ-A). Switching providers is an adapter cha
 ## Alternatives considered
 
 Embedding card fields (rejected: PCI scope); activating on the redirect back (rejected: forgeable).
+
+## Amendment — Phase 11 (26 Oct 2026): PayHere
+
+The product owner chose **PayHere** (D8). How the decision is applied:
+
+- **Checkout** is PayHere's hosted page (Checkout API). The server creates a PENDING payment, copying the plan's name,
+  length and price, and returns the form fields the browser posts to PayHere, including
+  `hash = UPPER(MD5(merchant_id + order_id + amount + currency + UPPER(MD5(merchant_secret))))`. The merchant secret
+  never leaves the server. The same `Idempotency-Key` returns the same payment.
+- **Verification**: PayHere posts a form to `notify_url` (`/api/payments/webhooks/payhere`) signed with
+  `md5sig = UPPER(MD5(merchant_id + order_id + payhere_amount + payhere_currency + status_code + UPPER(MD5(secret))))`.
+  PayHere's scheme has no timestamp, so the 5-minute tolerance doesn't apply; replays are harmless because each
+  message (order + status + payment id) is recorded once, and amount and currency must match the payment.
+- **Outcomes**: 2 activates (subscription period + entitlement + `SubscriptionActivated` outbox event + audit, one
+  transaction); 0 stays pending; -1/-2 mark a pending payment cancelled/failed; -3 (charge-back) cancels the period and
+  revokes the entitlement. A success that arrives after a checkout was marked abandoned still activates.
+- **Renewals** start when the student's latest Premium ends, so paid time is never lost. Nothing renews automatically.
+- **The TEST provider** replaces the planned Sandbox adapter: a labelled page where the student chooses the outcome,
+  for development and demos. It is the default when no provider is configured and is refused under the `prod`
+  profile; PAYHERE without merchant credentials, or live PayHere without an https `PUBLIC_BASE_URL`, also fails startup.
+- The provider "port" is kept deliberately small (checkout fields + verified `Notification`); a second provider would
+  add one adapter and its own webhook endpoint.

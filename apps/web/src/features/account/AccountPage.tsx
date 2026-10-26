@@ -4,7 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { z } from 'zod';
 import { Alert, Avatar, Badge, Button, Card, Dialog, Skeleton, TextField } from '@/components/ui';
-import { useMyAccess } from '@/features/access/api';
+import { Link } from 'react-router';
+import { formatPrice, useMySubscription } from '@/features/billing/api';
 import { ApiError } from '@/lib/api/problem';
 import { useAuth } from '@/lib/auth/AuthContext';
 import type { Me } from '@/lib/auth/types';
@@ -146,29 +147,65 @@ function Account({ user }: { user: Me }) {
 
 const longDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' });
 
-/** The student's Premium status, decided by subscription-service (FR-SUB-08). */
+const paymentLabel = { SUCCEEDED: 'Paid', PENDING: 'Waiting for confirmation', FAILED: 'Failed', CANCELLED: 'Cancelled' } as const;
+const paymentTone = { SUCCEEDED: 'free', PENDING: 'warning', FAILED: 'danger', CANCELLED: 'neutral' } as const;
+
+/** The student's Premium status and payments, decided by subscription-service (FR-SUB-06, FR-SUB-08). */
 function PlanCard() {
-  const me = useMyAccess();
+  const me = useMySubscription();
   return (
-    <Card className="flex flex-col gap-3 p-6">
-      <h2 className="text-lg font-bold">Your plan</h2>
+    <Card className="flex flex-col gap-4 p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-bold">Your plan</h2>
+        <Link to="/plans" className="font-semibold">
+          {me.data?.premium ? 'Add more time' : 'See Premium plans'}
+        </Link>
+      </div>
       {me.isPending ? (
         <Skeleton className="h-6 w-1/2" />
       ) : me.isError ? (
         <p className="text-muted">We couldn’t load your plan just now.</p>
-      ) : me.data.premium && me.data.entitlement ? (
-        <p className="flex flex-wrap items-center gap-2">
-          <Badge tone="premium">Premium</Badge>
-          <span>Unlimited attempts on every exam until {longDate.format(new Date(me.data.entitlement.endsAt))}.</span>
-        </p>
       ) : (
-        <p className="flex flex-wrap items-center gap-2">
-          <Badge tone="free">Free</Badge>
-          <span>
-            Each exam gives you a few free attempts of every exam type. When they’re used up, Premium gives you unlimited
-            attempts.
-          </span>
-        </p>
+        <>
+          {me.data.premium && me.data.premiumEndsAt ? (
+            <p className="flex flex-wrap items-center gap-2">
+              <Badge tone="premium">Premium</Badge>
+              <span>Unlimited attempts on every exam until {longDate.format(new Date(me.data.premiumEndsAt))}.</span>
+            </p>
+          ) : (
+            <p className="flex flex-wrap items-center gap-2">
+              <Badge tone="free">Free</Badge>
+              <span>
+                Each exam gives you a few free attempts of every exam type. When they’re used up, Premium gives you unlimited
+                attempts.
+              </span>
+            </p>
+          )}
+          {me.data.payments.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-[13px] font-bold tracking-wider text-muted uppercase">Payments</h3>
+              <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
+                {me.data.payments.map((p) => (
+                  <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-[14.5px]">
+                    <span>
+                      <span className="font-semibold">{p.planName}</span>
+                      <span className="block text-[13px] text-muted">
+                        {longDate.format(new Date(p.createdAt))}
+                        {p.provider === 'TEST' && ' · test payment'}
+                        {p.status === 'SUCCEEDED' && p.premiumEndsAt && ` · Premium until ${longDate.format(new Date(p.premiumEndsAt))}`}
+                        {p.failureReason === 'CHARGEDBACK' && ' · reversed'}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <span className="tabular-nums">{formatPrice(p.amountMinor, p.currency)}</span>
+                      <Badge tone={paymentTone[p.status]}>{paymentLabel[p.status]}</Badge>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
       )}
     </Card>
   );

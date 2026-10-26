@@ -1,5 +1,24 @@
 # Changelog
 
+## Phase 11 — Subscriptions and payments (PayHere)
+
+- **Premium plans** (`/plans`, "Pricing" in the header): plans on sale with price, price per month, the best-value plan
+  and how much it saves. Locked exams and the account page link here.
+- **Checkout** (`/checkout/:planId`): the details PayHere asks for (name and email prefilled), then the browser posts a
+  signed form to PayHere. A double click or retry never creates a second payment.
+- **Return page** (`/checkout/return`): waits for PayHere's confirmation to reach the server, then shows Premium and its
+  end date; failures and cancellations say nothing was charged.
+- **Verified activation (ADR-011 amended):** PayHere's notification is checked (md5sig, merchant, amount, currency),
+  recorded once, and activates the subscription and Premium in one transaction. Renewals start when current Premium
+  ends; charge-backs remove Premium; finished periods expire and abandoned checkouts are closed by a sweep.
+- **Test payments:** with no provider configured, a labelled test page stands in for PayHere (no money moves); the
+  server refuses it under the `prod` profile.
+- **Administration → Plans & payments:** create and edit plans (length, price in LKR or USD, on sale or hidden, order),
+  and see every payment with its status and PayHere reference.
+- **Account page:** Premium end date, "Add more time", and the last ten payments.
+- **Backend:** subscription-service `billing` package, migration V4, new endpoints in the contract; `.env.example` and
+  Compose gain `PAYMENT_PROVIDER`, `PAYHERE_MERCHANT_ID`, `PAYHERE_MERCHANT_SECRET`, `PAYHERE_SANDBOX`.
+
 ## Phase 10 — Student dashboard
 
 - **Dashboard** (`/dashboard`): signed-in students land here from the home page, and it's in the header next to Exams.

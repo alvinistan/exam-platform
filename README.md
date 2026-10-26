@@ -168,9 +168,28 @@ subscription-service decides access on every request (ADR-007); nothing is cache
 - **Free attempts per exam type**: each exam type of each exam gives every student a number of free attempts
   (set in the exam's setup, step 4; defaults Practice 3, Mock 1, Adaptive 3). When they are used up that exam type
   needs Premium; past results stay. **Administration → Access** lists the numbers for every published exam.
-- **Premium access by hand**: Access → Premium access for students. Paid plans arrive in a later phase.
+- **Premium access by hand**: Access → Premium access for students.
+- **Paid plans**: see Payments below.
 - subscription-service learns each exam's free attempts from catalog-service's event feed, a few seconds after a
   change. It signs in with `SUBSCRIPTION_SERVICE_CLIENT_SECRET` from `.env`.
+
+## Payments (Phase 11)
+
+Students buy Premium on `/plans`; administrators set plans and see payments in **Administration → Plans & payments**
+(1, 3, 6 or 12 months, priced in LKR or USD; a price change applies to new payments only).
+
+- **Out of the box** `PAYMENT_PROVIDER=TEST`: choosing a plan opens a clearly labelled test page where no money moves.
+  It is refused when the `prod` profile is active.
+- **PayHere sandbox**: create a sandbox account at sandbox.payhere.lk, add your domain under Settings → Domains &
+  Credentials, then set in `.env`:
+  `PAYMENT_PROVIDER=PAYHERE`, `PAYHERE_MERCHANT_ID`, `PAYHERE_MERCHANT_SECRET` (the secret for that domain),
+  `PAYHERE_SANDBOX=true` and `PUBLIC_BASE_URL`.
+- **PayHere must reach the server**: it confirms payments by posting to `PUBLIC_BASE_URL/api/payments/webhooks/payhere`,
+  so `http://localhost` won't work. For local testing use a tunnel (for example `cloudflared tunnel --url
+  http://localhost:8088`) and set `PUBLIC_BASE_URL` to the tunnel's https address. Premium starts only when that
+  confirmation arrives; the return page waits for it.
+- **Live**: `PAYHERE_SANDBOX=false`, live merchant credentials and an https `PUBLIC_BASE_URL`; the service refuses to
+  start otherwise.
 
 ## Conventions
 
@@ -185,6 +204,7 @@ subscription-service decides access on every request (ADR-007); nothing is cache
 
 ## Status
 
-Phases 0–10 are complete: catalogue, question bank, guided exam setup, free attempts and Premium access, the exam
-flow for Practice, Mock and Adaptive exams, adaptive difficulty per topic with a "My progress" page, and the student
-dashboard. Subscriptions and payments come next; AI explanations are deferred. See `CHANGELOG.md`.
+Phases 0–11 are complete: catalogue, question bank, guided exam setup, free attempts and Premium access, the exam
+flow for Practice, Mock and Adaptive exams, adaptive difficulty per topic with a "My progress" page, the student
+dashboard, and Premium plans with PayHere payments. QA and security hardening come next; AI explanations are
+deferred. See `CHANGELOG.md`.

@@ -97,16 +97,19 @@ describe('free attempts for students', () => {
     });
     renderRoute('/exams/nursing-licensure');
     expect(await screen.findByRole('region', { name: 'You’ve used your free attempts' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'See Premium plans' })).toHaveAttribute('href', '/plans');
   });
 
   it('shows the student’s plan on their account page', async () => {
     mockApi({
       ...signedIn(),
-      'GET /api/access/me': () => jsonResponse({ premium: true, entitlement: { source: 'MANUAL', endsAt: '2026-12-31T18:29:59Z' } }),
+      'GET /api/subscriptions/me': () =>
+        jsonResponse({ premium: true, premiumEndsAt: '2026-12-31T18:29:59Z', periods: [], payments: [] }),
     });
     renderRoute('/account');
-    const plan = (await screen.findByRole('heading', { name: 'Your plan' })).closest('div') as HTMLElement;
-    expect(await within(plan).findByText(/Unlimited attempts on every exam until/)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Your plan' })).toBeInTheDocument();
+    expect(await screen.findByText(/Unlimited attempts on every exam until/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Add more time' })).toHaveAttribute('href', '/plans');
   });
 });
 

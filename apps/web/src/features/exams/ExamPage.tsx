@@ -337,9 +337,11 @@ function LockedPreview() {
             You’ve used your free attempts
           </h2>
           <p className="text-[14.5px] text-ink-2">
-            Your results are kept below. Premium gives you unlimited attempts; plans are on the way, and until then an
-            administrator can add Premium to your account.
+            Your results are kept below. Premium gives you unlimited attempts on every exam.
           </p>
+          <Link to="/plans" className={buttonClasses('premium')}>
+            See Premium plans
+          </Link>
         </div>
       </div>
     </section>

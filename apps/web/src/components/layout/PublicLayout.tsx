@@ -31,6 +31,10 @@ export function PublicLayout() {
               <NavLink to="/exams" className={navClass}>
                 Exams
               </NavLink>
+              {/* Phones: Premium is reached from the account menu and locked exams, to keep the header on one line. */}
+              <NavLink to="/plans" className={(s) => `${navClass(s)} hidden sm:inline`}>
+                Pricing
+              </NavLink>
             </nav>
           </div>
           <AccountMenu />

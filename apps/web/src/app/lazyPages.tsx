@@ -23,4 +23,15 @@ export const QuestionImportPage = lazy(() => import('@/features/admin/questions/
 export const StartPage = lazy(() => import('@/features/attempts/StartPage').then((m) => ({ default: m.StartPage })));
 export const AttemptPage = lazy(() => import('@/features/attempts/AttemptPage').then((m) => ({ default: m.AttemptPage })));
 export const ProgressPage = lazy(() => import('@/features/progress/ProgressPage').then((m) => ({ default: m.ProgressPage })));
+export const PlansPaymentsPage = lazy(() =>
+  import('@/features/admin/billing/PlansPaymentsPage').then((m) => ({ default: m.PlansPaymentsPage })),
+);
+export const CheckoutPage = lazy(() => import('@/features/billing/CheckoutPage').then((m) => ({ default: m.CheckoutPage })));
+export const TestPaymentPage = lazy(() => import('@/features/billing/TestPaymentPage').then((m) => ({ default: m.TestPaymentPage })));
+export const CheckoutReturnPage = lazy(() =>
+  import('@/features/billing/CheckoutResultPage').then((m) => ({ default: m.CheckoutReturnPage })),
+);
+export const CheckoutCancelPage = lazy(() =>
+  import('@/features/billing/CheckoutResultPage').then((m) => ({ default: m.CheckoutCancelPage })),
+);
 export const DashboardPage = lazy(() => import('@/features/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })));
