@@ -56,6 +56,39 @@ public class ProgressRepository {
         return newestFirst;
     }
 
+    public record Day(java.time.LocalDate day, int answered, int correct) {
+    }
+
+    /** Marked answers per day (in {@code zone}) since {@code from}, across all exams. Days without answers are left out. */
+    public List<Day> activity(UUID studentId, java.time.ZoneId zone, OffsetDateTime from) {
+        return jdbc.sql("""
+                SELECT (r.answered_at AT TIME ZONE :zone)::date AS day, count(*) AS answered,
+                       count(*) FILTER (WHERE r.is_correct) AS correct
+                FROM response r JOIN attempt a ON a.id = r.attempt_id
+                WHERE a.student_id = :s AND r.is_correct IS NOT NULL AND r.answered_at >= :from
+                GROUP BY 1 ORDER BY 1
+                """)
+                .param("zone", zone.getId()).param("s", studentId).param("from", from)
+                .query((rs, n) -> new Day(rs.getObject(1, java.time.LocalDate.class), rs.getInt(2), rs.getInt(3)))
+                .list();
+    }
+
+    public record Totals(int answered, int correct, int finishedAttempts) {
+    }
+
+    /** Every marked answer and finished attempt of the student, across all exams. */
+    public Totals totals(UUID studentId) {
+        return jdbc.sql("""
+                SELECT (SELECT count(*) FROM response r JOIN attempt a ON a.id = r.attempt_id
+                        WHERE a.student_id = :s AND r.is_correct IS NOT NULL),
+                       (SELECT count(*) FROM response r JOIN attempt a ON a.id = r.attempt_id
+                        WHERE a.student_id = :s AND r.is_correct),
+                       (SELECT count(*) FROM attempt WHERE student_id = :s AND status = 'SCORED')
+                """)
+                .param("s", studentId)
+                .query((rs, n) -> new Totals(rs.getInt(1), rs.getInt(2), rs.getInt(3))).single();
+    }
+
     /** Exams the student has started, most recent first. */
     public List<ExamPractised> exams(UUID studentId) {
         return jdbc.sql("""

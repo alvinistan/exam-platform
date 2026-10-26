@@ -432,6 +432,38 @@ class AttemptTests {
         expect(call(get("/api/progress/exams"), null, null), 401);
     }
 
+    @Test
+    void theDashboardOverviewCountsTodaysAnswersAndTheStreak() throws Exception {
+        MockHttpServletResponse empty = expect(call(get("/api/progress/overview").param("tz", "Asia/Colombo"), token, null), 200);
+        assertThat((Integer) read(empty, "$.answered")).isZero();
+        assertThat((Integer) read(empty, "$.streakDays")).isZero();
+        assertThat((List<Object>) read(empty, "$.activity")).hasSize(14);
+
+        MockHttpServletResponse started = expect(start("PRACTICE", List.of(ELECTRICITY), "COUNT", 5), 201);
+        String id = read(started, "$.id");
+        for (int position = 1; position <= 5; position++) {
+            expect(answer(id, position, List.of(letter(started, position, false))), 200);
+        }
+        MockHttpServletResponse overview = expect(call(get("/api/progress/overview").param("tz", "Asia/Colombo"), token, null), 200);
+        assertThat((Integer) read(overview, "$.answered")).isEqualTo(5);
+        assertThat((Integer) read(overview, "$.accuracy")).isZero();
+        assertThat((Integer) read(overview, "$.streakDays")).isEqualTo(1);
+        assertThat((Integer) read(overview, "$.answeredThisWeek")).isEqualTo(5);
+        assertThat((Integer) read(overview, "$.activity[13].answered")).isEqualTo(5);
+        assertThat((String) read(overview, "$.focus[0].title")).isEqualTo("Electricity");
+        assertThat((String) read(overview, "$.focus[0].examSlug")).isEqualTo("ol-science");
+        assertThat((String) read(overview, "$.exams[0].title")).isEqualTo("O/L Science");
+
+        // Practice on two earlier days, one of them yesterday: a three-day streak.
+        jdbc.update("""
+                UPDATE response SET answered_at = answered_at - (position - 1) * interval '1 day'
+                WHERE attempt_id = ?::uuid AND position <= 3
+                """, id);
+        assertThat((Integer) read(expect(call(get("/api/progress/overview").param("tz", "Asia/Colombo"), token, null), 200),
+                "$.streakDays")).isEqualTo(3);
+        expect(call(get("/api/progress/overview").param("tz", "Mars/Olympus"), token, null), 400);
+    }
+
     // --- stub ---------------------------------------------------------------------------------------------------------
 
     static Map<String, Object> option(String label, boolean correct) {

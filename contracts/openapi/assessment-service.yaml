@@ -143,6 +143,60 @@ paths:
         '200': { description: The finished attempt with its result and review., content: { application/json: { schema: { $ref: '#/components/schemas/AttemptView' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
+  /api/progress/overview:
+    get:
+      tags: [Progress]
+      operationId: getProgressOverview
+      summary: The dashboard's picture of the student across all exams
+      description: >-
+        Totals, current streak (consecutive days with a marked answer up to today or yesterday, at most 60), the last
+        14 days of activity, the weakest topics across recently practised exams, and a summary per exam.
+      parameters:
+        - name: tz
+          in: query
+          description: The student's time zone, so "today" is their today.
+          schema: { type: string, default: UTC, examples: [Asia/Colombo] }
+      responses:
+        '200':
+          description: Overview.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [answered, correct, accuracy, finishedAttempts, streakDays, answeredThisWeek, activity, focus, exams]
+                properties:
+                  answered: { type: integer }
+                  correct: { type: integer }
+                  accuracy: { type: integer }
+                  finishedAttempts: { type: integer }
+                  streakDays: { type: integer, maximum: 60 }
+                  answeredThisWeek: { type: integer, description: The last 7 days including today. }
+                  activity:
+                    type: array
+                    description: 14 days, oldest first, including days without answers.
+                    items:
+                      type: object
+                      properties:
+                        day: { type: string, format: date }
+                        answered: { type: integer }
+                        correct: { type: integer }
+                  focus:
+                    type: array
+                    description: Up to 6 topics to practise next, weakest first.
+                    items:
+                      type: object
+                      properties:
+                        examId: { type: string, format: uuid }
+                        examTitle: { type: string }
+                        examSlug: { type: string }
+                        topicId: { type: string, format: uuid }
+                        title: { type: string }
+                        level: { type: integer }
+                        levelLabel: { type: string }
+                        recentAccuracy: { type: integer }
+                  exams: { type: array, items: { type: object } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
   /api/progress/exams:
     get:
       tags: [Progress]

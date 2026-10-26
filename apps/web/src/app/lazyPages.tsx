@@ -23,3 +23,4 @@ export const QuestionImportPage = lazy(() => import('@/features/admin/questions/
 export const StartPage = lazy(() => import('@/features/attempts/StartPage').then((m) => ({ default: m.StartPage })));
 export const AttemptPage = lazy(() => import('@/features/attempts/AttemptPage').then((m) => ({ default: m.AttemptPage })));
 export const ProgressPage = lazy(() => import('@/features/progress/ProgressPage').then((m) => ({ default: m.ProgressPage })));
+export const DashboardPage = lazy(() => import('@/features/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })));
