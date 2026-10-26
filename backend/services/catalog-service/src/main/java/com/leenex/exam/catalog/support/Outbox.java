@@ -18,10 +18,18 @@ public class Outbox {
 
     private final JdbcClient jdbc;
     private final JsonMapper json;
+    private final double visibleAfterSeconds;
 
-    public Outbox(JdbcClient jdbc, JsonMapper json) {
+    /**
+     * @param visibleAfter the feed only returns events at least this old (ADR-006): a transaction that started
+     *                     earlier but commits later can't then be skipped by a consumer that already moved on
+     */
+    public Outbox(JdbcClient jdbc, JsonMapper json,
+                  @org.springframework.beans.factory.annotation.Value("${catalog.outbox.visible-after:5s}")
+                  java.time.Duration visibleAfter) {
         this.jdbc = jdbc;
         this.json = json;
+        this.visibleAfterSeconds = visibleAfter.toMillis() / 1000.0;
     }
 
     public void publish(String aggregateType, UUID aggregateId, String eventType, Map<String, ?> payload) {
@@ -43,9 +51,11 @@ public class Outbox {
     public List<StoredEvent> after(long seq, int limit) {
         return jdbc.sql("""
                 SELECT seq, id, event_type, occurred_at, payload::text AS payload
-                FROM catalog.outbox_event WHERE seq > :after ORDER BY seq LIMIT :limit
+                FROM catalog.outbox_event
+                WHERE seq > :after AND occurred_at <= now() - make_interval(secs => :delay)
+                ORDER BY seq LIMIT :limit
                 """)
-                .param("after", seq).param("limit", limit)
+                .param("after", seq).param("limit", limit).param("delay", visibleAfterSeconds)
                 .query((rs, row) -> new StoredEvent(rs.getLong("seq"), rs.getObject("id", UUID.class),
                         rs.getString("event_type"), rs.getObject("occurred_at", OffsetDateTime.class),
                         rs.getString("payload")))

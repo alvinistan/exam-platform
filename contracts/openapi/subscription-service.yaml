@@ -48,6 +48,29 @@ paths:
                 type: object
                 additionalProperties: { $ref: './common.yaml#/components/schemas/AccessStatus' }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+  /api/access/me:
+    get:
+      tags: [Access]
+      operationId: getMyAccess
+      summary: The caller's plan
+      responses:
+        '200':
+          description: Premium status, welcome attempts left and how many exams are free.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [premium, freeExamCount]
+                properties:
+                  premium: { type: boolean }
+                  entitlement:
+                    type: [object, 'null']
+                    properties:
+                      source: { type: string, enum: [SUBSCRIPTION, MANUAL] }
+                      endsAt: { type: string, format: date-time }
+                  welcomeAttemptsLeft: { type: [integer, 'null'], description: Null when the welcome allowance is off. }
+                  freeExamCount: { type: integer }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
   /api/plans:
     get:
       tags: [Plans]
@@ -165,10 +188,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [policies, freeExamIds]
+                required: [policies, freeExamIds, exams]
                 properties:
                   policies: { type: array, items: { $ref: '#/components/schemas/Policy' } }
                   freeExamIds: { type: array, items: { type: string, format: uuid } }
+                  exams:
+                    type: array
+                    description: Published exams in catalogue order and what the policies make of each.
+                    items: { $ref: '#/components/schemas/ExamAccess' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/billing/policies/{ruleCode}:
@@ -206,6 +233,16 @@ paths:
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/billing/entitlements:
+    get:
+      tags: [Admin billing]
+      operationId: listEntitlements
+      summary: Entitlements, newest first (up to 200)
+      parameters:
+        - { name: studentId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Entitlements., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Entitlement' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
     post:
       tags: [Admin billing]
       operationId: grantEntitlement
@@ -222,7 +259,7 @@ paths:
                 endsAt: { type: string, format: date-time }
                 reason: { type: string, minLength: 3, maxLength: 500 }
       responses:
-        '201': { description: Granted. }
+        '201': { description: Granted from now until endsAt (at most 5 years)., content: { application/json: { schema: { $ref: '#/components/schemas/Entitlement' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
@@ -244,6 +281,7 @@ paths:
                 reason: { type: string, minLength: 3, maxLength: 500 }
       responses:
         '204': { description: Revoked; takes effect on the next request. }
+        '409': { description: Already revoked (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
@@ -252,7 +290,11 @@ paths:
       tags: [Internal]
       operationId: decideAccess
       summary: Decide whether a student may start a mode on an exam (assessment-service)
-      description: Evaluated at request time with no caching beyond the request (FR-ACC-03). Counts the welcome allowance atomically when `consume` is true.
+      description: >-
+        Needs a service token with scope billing.access. Evaluated at request time with no caching beyond the request
+        (FR-ACC-03). With `consume` (and `attemptId`), an allowed start is recorded: a free exam stays free for the
+        student afterwards (FA-5) and a welcome attempt is counted once per attemptId; starts by one student are
+        serialised.
       requestBody:
         required: true
         content:
@@ -277,7 +319,12 @@ paths:
                 properties:
                   allowed: { type: boolean }
                   bank: { type: string, enum: [TRIAL, MAIN] }
-                  reason: { type: string, examples: [FA1_POSITION_2_OF_6, ACTIVE_SUBSCRIPTION, SUBSCRIPTION_REQUIRED] }
+                  reason:
+                    type: string
+                    description: >-
+                      FA1_POSITION_n_OF_N, FA1_CATEGORY_POSITION_n_OF_N, FA5_KEPT_FREE, ACTIVE_ENTITLEMENT,
+                      WELCOME_ALLOWANCE, MODE_NOT_FREE, SUBSCRIPTION_REQUIRED or EXAM_UNAVAILABLE.
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
 components:
   securitySchemes:
@@ -320,6 +367,32 @@ components:
         status: { type: string, enum: [ACTIVE, EXPIRED, CANCELLED] }
         startsAt: { type: string, format: date-time }
         endsAt: { type: string, format: date-time }
+    ExamAccess:
+      type: object
+      required: [examId, title, slug, categoryId, access, reason]
+      properties:
+        examId: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        categoryId: { type: string, format: uuid }
+        displayOrder: { type: [integer, 'null'] }
+        access: { type: string, enum: [FREE, PREMIUM] }
+        reason: { type: string, examples: [FA1_POSITION_2_OF_6, SUBSCRIPTION_REQUIRED] }
+    Entitlement:
+      type: object
+      required: [id, studentId, source, state, startsAt, endsAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        studentId: { type: string, format: uuid }
+        source: { type: string, enum: [SUBSCRIPTION, MANUAL] }
+        state: { type: string, enum: [ACTIVE, SCHEDULED, EXPIRED, REVOKED] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        grantReason: { type: [string, 'null'] }
+        grantedBy: { type: [string, 'null'], format: uuid }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        revokedReason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
     Policy:
       type: object
       required: [ruleCode, active, params]

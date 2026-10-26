@@ -34,6 +34,7 @@ abstract class IdentityTestSupport {
     static final String BASE_URL = "http://localhost:8088";
     static final String ADMIN_EMAIL = "first.admin@example.com";
     static final String ADMIN_SUBJECT = "g-first-admin";
+    static final String SERVICE_SECRET = "test-service-secret-0123456789";
 
     @ServiceConnection
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:16-alpine");
@@ -53,6 +54,8 @@ abstract class IdentityTestSupport {
         registry.add("identity.google.token-uri", () -> GOOGLE.baseUrl() + "/token");
         registry.add("identity.google.jwk-set-uri", () -> GOOGLE.baseUrl() + "/certs");
         registry.add("identity.refresh.reuse-grace", () -> "2s");
+        registry.add("identity.service-clients.test-service.secret", () -> SERVICE_SECRET);
+        registry.add("identity.service-clients.test-service.scopes", () -> "catalog.internal,billing.access");
     }
 
     @Autowired

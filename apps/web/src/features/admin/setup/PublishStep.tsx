@@ -5,6 +5,8 @@ import { Check, GraduationCap, TriangleAlert } from 'lucide-react';
 import { Alert, Badge, Button, Card, Dialog } from '@/components/ui';
 import { examKeys, modeLabels } from '@/features/exams/api';
 import { archiveExam, catalogKeys, publishExam, useAdminCategories, type AdminExamDetail } from '@/features/admin/catalog/api';
+import { describeReason } from '@/features/access/api';
+import { usePolicies } from '@/features/admin/access/api';
 import { ApiError } from '@/lib/api/problem';
 import { StepHeading } from './SetupShell';
 import { setupPath, setupStatus, stepForIssue } from './steps';
@@ -112,6 +114,7 @@ export function PublishStep({ exam }: { exam: AdminExamDetail }) {
 
       <Card className="flex flex-col gap-3 p-6">
         <h3 className="text-[15px] font-semibold text-muted">What students will see in the catalogue</h3>
+        <AccessLine exam={exam} />
         <div className="flex flex-wrap items-center gap-4 rounded-md border border-border p-4">
           <span className="grid size-14 flex-none place-items-center rounded-md bg-primary-soft text-primary" aria-hidden="true">
             <GraduationCap className="size-7" />
@@ -188,5 +191,29 @@ export function PublishStep({ exam }: { exam: AdminExamDetail }) {
         )}
       </Dialog>
     </div>
+  );
+}
+
+/** Free or Premium, from the access rules (subscription-service learns about a newly published exam within seconds). */
+function AccessLine({ exam }: { exam: AdminExamDetail }) {
+  const policies = usePolicies();
+  if (!policies.data) return null;
+  const row = policies.data.exams.find((e) => e.examId === exam.id);
+  const free = policies.data.policies.find((p) => p.ruleCode === 'FA1_CATALOGUE_POSITION');
+  return (
+    <p className="text-[14.5px] text-ink-2">
+      {row ? (
+        <>
+          <strong>Access: {row.access === 'FREE' ? 'Free' : 'Premium'}.</strong> {describeReason(row.reason)}.
+        </>
+      ) : exam.status === 'PUBLISHED' ? (
+        'Access is being worked out; refresh in a few seconds.'
+      ) : free?.active ? (
+        `Access is decided when it’s published: the first ${String((free.params as { count?: number }).count ?? 0)} exams in catalogue order are free.`
+      ) : (
+        'Access is decided when it’s published.'
+      )}{' '}
+      <Link to="/admin/access">Access rules</Link>
+    </p>
   );
 }

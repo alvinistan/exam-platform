@@ -3,7 +3,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
 import { z } from 'zod';
-import { Alert, Avatar, Badge, Button, Card, Dialog, TextField } from '@/components/ui';
+import { Alert, Avatar, Badge, Button, Card, Dialog, Skeleton, TextField } from '@/components/ui';
+import { useMyAccess } from '@/features/access/api';
 import { ApiError } from '@/lib/api/problem';
 import { useAuth } from '@/lib/auth/AuthContext';
 import type { Me } from '@/lib/auth/types';
@@ -106,6 +107,8 @@ function Account({ user }: { user: Me }) {
         </dl>
       </Card>
 
+      <PlanCard />
+
       <Card className="flex flex-col gap-3 border-danger-soft p-6">
         <h2 className="text-lg font-bold">Delete account</h2>
         <p className="text-muted">
@@ -138,5 +141,43 @@ function Account({ user }: { user: Me }) {
         {remove.isError && <Alert tone="error" title="Couldn’t delete your account">{errorMessage(remove.error)}</Alert>}
       </Dialog>
     </div>
+  );
+}
+
+const longDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' });
+
+/** The student's Premium status, decided by subscription-service (FR-SUB-08). */
+function PlanCard() {
+  const me = useMyAccess();
+  return (
+    <Card className="flex flex-col gap-3 p-6">
+      <h2 className="text-lg font-bold">Your plan</h2>
+      {me.isPending ? (
+        <Skeleton className="h-6 w-1/2" />
+      ) : me.isError ? (
+        <p className="text-muted">We couldn’t load your plan just now.</p>
+      ) : me.data.premium && me.data.entitlement ? (
+        <p className="flex flex-wrap items-center gap-2">
+          <Badge tone="premium">Premium</Badge>
+          <span>Every premium exam is open to you until {longDate.format(new Date(me.data.entitlement.endsAt))}.</span>
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          <p className="flex flex-wrap items-center gap-2">
+            <Badge tone="free">Free</Badge>
+            <span>
+              {me.data.freeExamCount === 1 ? '1 exam is' : `${me.data.freeExamCount} exams are`} free for everyone. Premium
+              exams are marked with a lock.
+            </span>
+          </p>
+          {me.data.welcomeAttemptsLeft !== null && me.data.welcomeAttemptsLeft > 0 && (
+            <p className="text-[14.5px] text-muted">
+              You have {me.data.welcomeAttemptsLeft} welcome attempt{me.data.welcomeAttemptsLeft === 1 ? '' : 's'} to try premium
+              exams.
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }

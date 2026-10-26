@@ -38,6 +38,18 @@ identity:
   jwt:
     signing-keys: ${IDENTITY_JWT_SIGNING_KEYS:}
     require-configured-key: ${IDENTITY_REQUIRE_SIGNING_KEY:false}
+  # Backend services that may get tokens with the client-credentials grant (ADR-005). A blank secret turns a client
+  # off. Scopes name what the token may reach: catalog.internal (catalog event feed), billing.access (decisions).
+  service-clients:
+    subscription-service:
+      secret: ${SUBSCRIPTION_SERVICE_CLIENT_SECRET:}
+      scopes: catalog.internal
+    assessment-service:
+      secret: ${ASSESSMENT_SERVICE_CLIENT_SECRET:}
+      scopes: catalog.internal,billing.access
+    learning-service:
+      secret: ${LEARNING_SERVICE_CLIENT_SECRET:}
+      scopes: catalog.internal
 
 management:
   endpoints:

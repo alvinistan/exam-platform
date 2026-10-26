@@ -8,6 +8,7 @@ export const AdminExamsPage = lazy(() => import('@/features/admin/catalog/ExamsP
 export const NewExamPage = lazy(() => import('@/features/admin/setup/ExamSetupPage').then((m) => ({ default: m.NewExamPage })));
 export const ExamSetupIndex = lazy(() => import('@/features/admin/setup/ExamSetupPage').then((m) => ({ default: m.ExamSetupIndex })));
 export const ExamSetupPage = lazy(() => import('@/features/admin/setup/ExamSetupPage').then((m) => ({ default: m.ExamSetupPage })));
+export const AccessPage = lazy(() => import('@/features/admin/access/AccessPage').then((m) => ({ default: m.AccessPage })));
 export const CategoriesPage = lazy(() =>
   import('@/features/admin/catalog/CategoriesPage').then((m) => ({ default: m.CategoriesPage })),
 );

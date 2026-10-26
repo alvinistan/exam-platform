@@ -1,19 +1,23 @@
 import { Link } from 'react-router';
 import { ArrowRight, GraduationCap } from 'lucide-react';
 import { Badge, Card } from '@/components/ui';
+import { AccessBadge } from '@/features/access/AccessBadge';
+import type { AccessStatus } from '@/features/access/api';
 import { modeLabels, type ExamSummary } from './api';
 
 interface ExamCardProps {
   exam: ExamSummary;
   categoryName?: string | undefined;
   headingLevel?: 'h2' | 'h3';
+  /** Free or Premium for whoever is browsing; the badge is left out while it loads. */
+  access?: AccessStatus | undefined;
 }
 
 /**
  * Catalogue card. The whole card is one link (the title), so keyboard and screen-reader users meet a single,
  * well-named target. Cover images arrive with media uploads; until then every card shares the same calm header.
  */
-export function ExamCard({ exam, categoryName, headingLevel = 'h3' }: ExamCardProps) {
+export function ExamCard({ exam, categoryName, headingLevel = 'h3', access }: ExamCardProps) {
   const Heading = headingLevel;
   return (
     <Card className="group relative flex h-full flex-col overflow-hidden transition-shadow hover:shadow-raised">
@@ -21,7 +25,10 @@ export function ExamCard({ exam, categoryName, headingLevel = 'h3' }: ExamCardPr
         <span className="flex size-10 items-center justify-center rounded-md bg-surface text-primary shadow-card">
           <GraduationCap aria-hidden="true" className="size-5" />
         </span>
-        {categoryName && <span className="text-[13px] font-semibold text-primary-ink">{categoryName}</span>}
+        <span className="flex flex-col items-end gap-1.5">
+          <AccessBadge status={access} />
+          {categoryName && <span className="text-[13px] font-semibold text-primary-ink">{categoryName}</span>}
+        </span>
       </div>
       <div className="flex flex-1 flex-col gap-3 p-5">
         <Heading className="text-lg leading-snug font-bold">
