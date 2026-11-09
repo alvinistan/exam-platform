@@ -1,5 +1,23 @@
 # Changelog
 
+## Phase 11C — Promotions: sale prices, discount codes, free access campaigns
+
+- **Sale prices**: any plan can be cheaper in LKR and/or USD between two dates. Pricing shows the regular price crossed
+  out, a "Sale" badge and when it ends; checkout charges the sale price while it's on.
+- **Discount codes**: a percentage or a fixed amount (per currency), for every plan or chosen plans, between two dates,
+  with a total limit and a per-student limit. Pending and paid payments count as uses; failed ones give the use back.
+  Students apply a code at checkout and see the discount before paying. The server works out the price every time.
+- **Free with a code**: when a code covers the whole price, the plan starts straight away. No PayHere and no address
+  form (provider `FREE`).
+- **Free access campaigns**: an exam, a bundle or everything, with attempt limits like a plan. Either for every student
+  between two dates (shown as a banner on Pricing) or for chosen students for 1, 3, 6 or 12 months. Ending a campaign
+  stops its access. It's counted and enforced exactly like a plan.
+- **Administration → Promotions**: campaigns (with a student search) and discount codes with their use. The plan dialog
+  gains a sale section. Payments show discounts and free activations.
+- **Backend**: subscription-service migration V6 (`campaign`, `discount_code`, sale columns, payment discount
+  columns); `POST /api/subscriptions/quote` (rate limited), `GET /api/plans/offers`, admin endpoints; buyer details
+  are only required for PayHere; contract updated; ADR-011 amended.
+
 ## Phase 11B — Dynamic plans: exams, bundles, limits and two currencies
 
 - **Plans for one exam, a bundle of exams, or everything**, each 1, 3, 6 or 12 months, priced in LKR and/or USD.

@@ -26,6 +26,9 @@ export const ProgressPage = lazy(() => import('@/features/progress/ProgressPage'
 export const PlansPaymentsPage = lazy(() =>
   import('@/features/admin/billing/PlansPaymentsPage').then((m) => ({ default: m.PlansPaymentsPage })),
 );
+export const PromotionsPage = lazy(() =>
+  import('@/features/admin/billing/PromotionsPage').then((m) => ({ default: m.PromotionsPage })),
+);
 export const CheckoutPage = lazy(() => import('@/features/billing/CheckoutPage').then((m) => ({ default: m.CheckoutPage })));
 export const TestPaymentPage = lazy(() => import('@/features/billing/TestPaymentPage').then((m) => ({ default: m.TestPaymentPage })));
 export const CheckoutReturnPage = lazy(() =>

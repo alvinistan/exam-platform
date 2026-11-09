@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api/client';
-import type { Limits, PaymentStatus, ScopeType } from '@/features/billing/api';
+import type { Limits, PaymentStatus, Provider, ScopeType } from '@/features/billing/api';
 import type { AdminExam } from '@/features/admin/catalog/api';
 
 /** contracts/openapi/subscription-service.yaml → Plan. */
@@ -20,6 +20,8 @@ export interface AdminPlan {
   displayOrder: number;
   version: number;
   updatedAt: string;
+  /** All null when there is no sale. */
+  sale: { priceLkrMinor: number | null; priceUsdMinor: number | null; startsAt: string | null; endsAt: string | null };
 }
 
 export interface PlanInput {
@@ -38,6 +40,11 @@ export interface PlanInput {
   adaptiveLimit: number | null;
   active: boolean;
   displayOrder: number;
+  /** Lower than the regular price, between saleStartsAt and saleEndsAt. */
+  salePriceLkrMinor: number | null;
+  salePriceUsdMinor: number | null;
+  saleStartsAt: string | null;
+  saleEndsAt: string | null;
 }
 
 /** contracts/openapi/subscription-service.yaml → AdminPayment. */
@@ -47,7 +54,7 @@ export interface AdminPayment {
   planId: string;
   planName: string;
   durationMonths: number;
-  provider: 'PAYHERE' | 'TEST';
+  provider: Provider;
   providerRef: string | null;
   amountMinor: number;
   currency: string;
@@ -55,13 +62,128 @@ export interface AdminPayment {
   failureReason: string | null;
   createdAt: string;
   updatedAt: string;
+  listPriceMinor: number | null;
+  discountCodeId: string | null;
+  discountMinor: number;
+}
+
+/** contracts/openapi/subscription-service.yaml → DiscountCode. */
+export interface DiscountCode {
+  id: string;
+  code: string;
+  description: string;
+  percentOff: number | null;
+  amountOffLkrMinor: number | null;
+  amountOffUsdMinor: number | null;
+  allPlans: boolean;
+  planIds: string[];
+  startsAt: string;
+  endsAt: string;
+  /** Null = no overall limit. */
+  maxUses: number | null;
+  maxUsesPerStudent: number;
+  active: boolean;
+  version: number;
+  /** Payments made with it that are pending or succeeded. */
+  uses: number;
+}
+
+export interface DiscountCodeInput {
+  code?: string;
+  description: string;
+  percentOff: number | null;
+  amountOffLkrMinor: number | null;
+  amountOffUsdMinor: number | null;
+  allPlans: boolean;
+  planIds: string[];
+  startsAt: string | null;
+  endsAt: string;
+  maxUses: number | null;
+  maxUsesPerStudent: number;
+  active: boolean;
+}
+
+/** contracts/openapi/subscription-service.yaml → Campaign. */
+export interface Campaign {
+  id: string;
+  name: string;
+  scopeType: ScopeType;
+  categoryId: string | null;
+  examIds: string[];
+  limits: Limits;
+  /** ALL: every student between startsAt and endsAt. SELECTED: chosen students, each for durationMonths. */
+  audience: 'ALL' | 'SELECTED';
+  startsAt: string;
+  endsAt: string | null;
+  durationMonths: number | null;
+  endedAt: string | null;
+  createdBy: string;
+  createdAt: string;
+  /** Students who have it (for ALL, those who have used it). */
+  students: number;
+}
+
+export interface CampaignInput {
+  name: string;
+  scopeType: ScopeType;
+  categoryId: string | null;
+  examIds: string[];
+  practiceLimit: number | null;
+  mockLimit: number | null;
+  adaptiveLimit: number | null;
+  audience: 'ALL' | 'SELECTED';
+  startsAt: string | null;
+  endsAt: string | null;
+  durationMonths: number | null;
+  studentIds: string[];
 }
 
 export const billingAdminKeys = {
   all: ['admin', 'billing'] as const,
   plans: () => [...billingAdminKeys.all, 'plans'] as const,
   payments: () => [...billingAdminKeys.all, 'payments'] as const,
+  codes: () => [...billingAdminKeys.all, 'codes'] as const,
+  campaigns: () => [...billingAdminKeys.all, 'campaigns'] as const,
 };
+
+export function useDiscountCodes() {
+  return useQuery({
+    queryKey: billingAdminKeys.codes(),
+    queryFn: ({ signal }) => apiFetch<DiscountCode[]>('/admin/billing/discount-codes', { signal }),
+  });
+}
+
+export function useCampaigns() {
+  return useQuery({
+    queryKey: billingAdminKeys.campaigns(),
+    queryFn: ({ signal }) => apiFetch<Campaign[]>('/admin/billing/campaigns', { signal }),
+  });
+}
+
+export const createDiscountCode = (input: DiscountCodeInput) =>
+  apiFetch<DiscountCode>('/admin/billing/discount-codes', { method: 'POST', json: input });
+
+export const updateDiscountCode = (code: DiscountCode, input: DiscountCodeInput) =>
+  apiFetch<DiscountCode>(`/admin/billing/discount-codes/${code.id}`, {
+    method: 'PUT',
+    json: input,
+    headers: { 'If-Match': `"${code.version}"` },
+  });
+
+export const createCampaign = (input: CampaignInput) =>
+  apiFetch<Campaign>('/admin/billing/campaigns', { method: 'POST', json: input });
+
+export const addCampaignStudents = (campaign: Campaign, studentIds: string[]) =>
+  apiFetch<Campaign>(`/admin/billing/campaigns/${campaign.id}/students`, { method: 'POST', json: { studentIds } });
+
+export const endCampaign = (campaign: Campaign) =>
+  apiFetch<Campaign>(`/admin/billing/campaigns/${campaign.id}/end`, { method: 'POST' });
+
+/** Whether a campaign is giving access now (not ended early, and for ALL, not past its end). */
+export function campaignOpen(c: Campaign, now = Date.now()): boolean {
+  if (c.endedAt) return false;
+  return c.endsAt === null || Date.parse(c.endsAt) > now;
+}
 
 export function useAdminPlans() {
   return useQuery({
@@ -113,4 +235,19 @@ export function planCode(name: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 30);
   return `${base || 'plan'}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** An ISO time → the value a datetime-local input shows, in the administrator's own time zone. */
+export function toLocalInput(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** A datetime-local value (the administrator's time zone) → ISO time; null when empty or not a time. */
+export function fromLocalInput(value: string): string | null {
+  if (!value) return null;
+  const t = new Date(value);
+  return Number.isNaN(t.getTime()) ? null : t.toISOString();
 }

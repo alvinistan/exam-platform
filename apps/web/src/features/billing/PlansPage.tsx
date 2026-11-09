@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { Check, CreditCard, Layers, BookOpen, Sparkles } from 'lucide-react';
+import { Check, CreditCard, Gift, Layers, BookOpen, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Alert, Badge, Card, EmptyState, ErrorState, Skeleton, buttonClasses } from '@/components/ui';
 import { useCategories } from '@/features/exams/api';
@@ -13,13 +13,17 @@ import {
   monthsLabel,
   perMonth,
   priceIn,
+  priceNow,
   useMySubscription,
+  useOffers,
   usePlans,
   type Currency,
+  type Offer,
   type PublicPlan,
 } from './api';
 
 const longDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' });
+const shortDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 
 /**
  * /plans — plans on sale, priced by the administrator: single subjects, bundles by category, and everything. Public;
@@ -74,6 +78,8 @@ export function PlansPage() {
         </Alert>
       )}
 
+      <OffersBanner />
+
       {plans.data?.testPayments && <TestModeNotice />}
 
       {plans.isPending ? (
@@ -102,6 +108,40 @@ export function PlansPage() {
       </p>
     </div>
   );
+}
+
+/** Free access open to every student right now (campaigns), with what it includes. Shows nothing when there is none. */
+export function OffersBanner() {
+  const offers = useOffers();
+  const { state } = useAuth();
+  if (!offers.data || offers.data.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-3">
+      {offers.data.map((o) => (
+        <Alert key={o.id} tone="success" title={o.name}>
+          <span className="inline-flex items-start gap-1.5">
+            <Gift aria-hidden="true" className="mt-0.5 size-4 flex-none" />
+            <span>
+              Free for every student until {longDate.format(new Date(o.endsAt))}: {offerScope(o)}.{' '}
+              {describeLimits(o.limits).join(' · ')}.{' '}
+              {state.status === 'signedIn' ? (
+                'It’s already on your account.'
+              ) : (
+                <Link to="/signin" className="font-semibold">
+                  Sign in to use it
+                </Link>
+              )}
+            </span>
+          </span>
+        </Alert>
+      ))}
+    </div>
+  );
+}
+
+function offerScope(o: Offer): string {
+  if (o.scopeType === 'ALL') return 'every exam';
+  return o.exams.map((e) => e.title).join(', ');
 }
 
 export function TestModeNotice() {
@@ -237,7 +277,7 @@ function Section({
 function GroupRow({ group, currency, showSubjects }: { group: Group; currency: Currency; showSubjects?: boolean }) {
   // "Best value": the lowest price per month in this group, when there's a real difference.
   const monthly = group.plans.map((p) => {
-    const price = priceIn(p, currency);
+    const price = priceNow(p, currency);
     return price === null ? null : perMonth(price, p.durationMonths);
   });
   const known = monthly.filter((m): m is number => m !== null);
@@ -271,18 +311,33 @@ function GroupRow({ group, currency, showSubjects }: { group: Group; currency: C
 }
 
 function PlanCard({ plan, currency, best, saving }: { plan: PublicPlan; currency: Currency; best: boolean; saving: number }) {
-  const price = priceIn(plan, currency);
+  const price = priceNow(plan, currency);
+  const regular = priceIn(plan, currency);
+  const onSale = price !== null && regular !== null && price < regular;
   return (
     <Card className={cn('flex h-full flex-col gap-4 p-5', best && 'border-primary ring-2 ring-primary/20')}>
       <div className="flex items-start justify-between gap-2">
         <h4 className="text-[16.5px] font-bold">{plan.name}</h4>
-        {best && <Badge tone="primary">Best value</Badge>}
+        <span className="flex flex-wrap justify-end gap-1">
+          {onSale && <Badge tone="warning">Sale</Badge>}
+          {best && <Badge tone="primary">Best value</Badge>}
+        </span>
       </div>
       {price === null ? (
         <p className="text-[14.5px] text-muted">Not sold in {currency}. Switch currency above.</p>
       ) : (
         <div>
-          <p className="text-3xl font-extrabold tracking-tight tabular-nums">{formatPriceShort(price, currency)}</p>
+          {onSale && (
+            <p className="text-[14px] text-muted">
+              <span className="sr-only">Regular price </span>
+              <span className="tabular-nums line-through">{formatPriceShort(regular, currency)}</span>
+              {plan.saleEndsAt && <> · sale ends {shortDate.format(new Date(plan.saleEndsAt))}</>}
+            </p>
+          )}
+          <p className="text-3xl font-extrabold tracking-tight tabular-nums">
+            {onSale && <span className="sr-only">Sale price </span>}
+            {formatPriceShort(price, currency)}
+          </p>
           <p className="text-[14px] text-muted">
             for {monthsLabel(plan.durationMonths)}
             {plan.durationMonths > 1 && <> · {formatPrice(perMonth(price, plan.durationMonths), currency)} a month</>}

@@ -212,7 +212,7 @@ class PromotionTests extends PaymentTestSupport {
         code(percentCode("FREEMONTH", 100, null));
         Student s = Student.next();
         // No buyer details are needed when nothing is paid.
-        MockHttpServletResponse r = expect(call(post("/api/subscriptions/checkout").header("Idempotency-Key", "free-1"),
+        MockHttpServletResponse r = expect(call(post("/api/subscriptions/checkout").header("Idempotency-Key", "free-code-1"),
                 s.token(), Map.of("planId", planId, "currency", "LKR", "code", "freemonth")), 201);
         assertThat((String) read(r, "$.provider")).isEqualTo("FREE");
         assertThat((String) read(r, "$.status")).isEqualTo("SUCCEEDED");
