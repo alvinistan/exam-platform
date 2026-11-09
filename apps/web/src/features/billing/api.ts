@@ -2,16 +2,34 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/AuthContext';
 
-/** contracts/openapi/subscription-service.yaml → PublicPlan. Prices are set by administrators. */
+export type Currency = 'LKR' | 'USD';
+export type ScopeType = 'EXAM' | 'BUNDLE' | 'ALL';
+
+/** Attempts per exam type, per exam, for the length of a plan: null = unlimited, 0 = not included. */
+export interface Limits {
+  practice: number | null;
+  mock: number | null;
+  adaptive: number | null;
+}
+
+/** contracts/openapi/subscription-service.yaml → PublicPlan. Prices, scope and limits are set by administrators. */
 export interface PublicPlan {
   id: string;
   name: string;
   description: string;
+  scopeType: ScopeType;
+  categoryId: string | null;
+  /** Published exams covered; empty for ALL (every exam). */
+  exams: { examId: string; title: string; slug: string }[];
   durationMonths: 1 | 3 | 6 | 12;
-  /** Smallest currency unit: 450000 = LKR 4,500.00. */
-  priceMinor: number;
-  currency: 'LKR' | 'USD';
+  /** Smallest currency unit: 450000 = LKR 4,500.00. Null = not sold in that currency. */
+  priceLkrMinor: number | null;
+  priceUsdMinor: number | null;
+  limits: Limits;
 }
+
+export const priceIn = (p: Pick<PublicPlan, 'priceLkrMinor' | 'priceUsdMinor'>, currency: Currency) =>
+  currency === 'USD' ? p.priceUsdMinor : p.priceLkrMinor;
 
 export interface PlanCatalogue {
   provider: 'PAYHERE' | 'TEST';
@@ -44,9 +62,30 @@ export interface SubscriptionPeriod {
   endsAt: string;
 }
 
+export interface ModeUse {
+  mode: 'PRACTICE' | 'MOCK' | 'USER_FRIENDLY';
+  /** Null = unlimited. */
+  limit: number | null;
+  used: number;
+  left: number | null;
+}
+
+/** One active plan with use per exam (for ALL: only exams already used under it). */
+export interface ActivePlan {
+  id: string;
+  name: string;
+  source: 'SUBSCRIPTION' | 'MANUAL';
+  scopeType: ScopeType;
+  limits: Limits;
+  startsAt: string;
+  endsAt: string;
+  exams: { examId: string; title: string; slug: string; modes: ModeUse[] }[];
+}
+
 export interface MySubscription {
   premium: boolean;
   premiumEndsAt: string | null;
+  plans: ActivePlan[];
   periods: SubscriptionPeriod[];
   payments: Payment[];
 }
@@ -78,10 +117,10 @@ export const billingKeys = {
   payment: (id: string) => [...billingKeys.all, 'payment', id] as const,
 };
 
-export function usePlans() {
+export function usePlans(filter: { examId?: string | undefined } = {}) {
   return useQuery({
-    queryKey: billingKeys.plans(),
-    queryFn: ({ signal }) => apiFetch<PlanCatalogue>('/plans', { signal }),
+    queryKey: [...billingKeys.plans(), filter.examId ?? 'all'],
+    queryFn: ({ signal }) => apiFetch<PlanCatalogue>('/plans', { signal, query: { examId: filter.examId } }),
     staleTime: 60_000,
   });
 }
@@ -105,10 +144,10 @@ export function usePayment(id: string | null, pollMs: number | false = false) {
   });
 }
 
-export function startCheckout(planId: string, idempotencyKey: string, customer: Customer): Promise<Checkout> {
+export function startCheckout(planId: string, currency: Currency, idempotencyKey: string, customer: Customer): Promise<Checkout> {
   return apiFetch<Checkout>('/subscriptions/checkout', {
     method: 'POST',
-    json: { planId, customer },
+    json: { planId, currency, customer },
     headers: { 'Idempotency-Key': idempotencyKey },
   });
 }
@@ -152,4 +191,23 @@ export function formatPriceShort(minor: number, currency: string): string {
 export const monthsLabel = (n: number) => (n === 12 ? '12 months' : n === 1 ? '1 month' : `${n} months`);
 
 /** Price per month in the smallest unit, rounded down, for comparing plans of different lengths. */
-export const perMonth = (p: Pick<PublicPlan, 'priceMinor' | 'durationMonths'>) => Math.floor(p.priceMinor / p.durationMonths);
+export const perMonth = (priceMinor: number, months: number) => Math.floor(priceMinor / months);
+
+const MODE_WORDS = { practice: 'Practice', mock: 'Mock exams', adaptive: 'Adaptive exams' } as const;
+
+/** "Practice: unlimited", "Mock exams: 8 attempts", leaving out exam types the plan doesn't include. */
+export function describeLimits(limits: Limits): string[] {
+  return (Object.keys(MODE_WORDS) as (keyof Limits)[])
+    .filter((k) => limits[k] !== 0)
+    .map((k) => {
+      const n = limits[k];
+      return `${MODE_WORDS[k]}: ${n === null ? 'unlimited' : `${n} attempt${n === 1 ? '' : 's'}`}`;
+    });
+}
+
+/** What a plan covers in a few words. */
+export function describeScope(plan: Pick<PublicPlan, 'scopeType' | 'exams'>): string {
+  if (plan.scopeType === 'ALL') return 'Every exam';
+  if (plan.scopeType === 'EXAM') return plan.exams[0]?.title ?? 'One exam';
+  return `${plan.exams.length} subjects: ${plan.exams.map((e) => e.title).join(', ')}`;
+}

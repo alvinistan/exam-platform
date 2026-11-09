@@ -118,7 +118,7 @@ function ExamDetailView({ exam }: { exam: ExamDetail }) {
 
       <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
         <div className="flex min-w-0 flex-col gap-8">
-          {allLocked && signedIn && <LockedPreview />}
+          {allLocked && signedIn && <LockedPreview examId={exam.id} />}
           <section aria-labelledby="modes-heading" className="flex flex-col gap-4">
             <h2 id="modes-heading" className="text-xl font-bold">
               Choose an exam type
@@ -254,7 +254,7 @@ function ModeCard({
           </Button>
         ) : locked ? (
           <Button variant="secondary" disabled>
-            <Lock aria-hidden="true" className="size-4" /> Needs Premium
+            <Lock aria-hidden="true" className="size-4" /> Needs a plan
           </Button>
         ) : (
           <Link to={startPath(exam.slug, settings.mode)} className={buttonClasses('primary')} aria-describedby={headingId}>
@@ -313,7 +313,7 @@ function RecentAttempts({ examId }: { examId: string }) {
  * What a signed-in student sees when every exam type's free attempts are used up. The blurred area is drawn shapes
  * only: the API never sends question content without access, so there is nothing real to hide.
  */
-function LockedPreview() {
+function LockedPreview({ examId }: { examId: string }) {
   return (
     <section aria-labelledby="locked-heading" className="grid overflow-hidden rounded-lg border border-[#d9ccfb] bg-surface">
       {/* Both layers share one grid cell, so the box grows to whichever is taller (no clipping on phones). */}
@@ -337,10 +337,10 @@ function LockedPreview() {
             You’ve used your free attempts
           </h2>
           <p className="text-[14.5px] text-ink-2">
-            Your results are kept below. Premium gives you unlimited attempts on every exam.
+            Your results are kept below. A plan for this exam gives you more attempts.
           </p>
-          <Link to="/plans" className={buttonClasses('premium')}>
-            See Premium plans
+          <Link to={`/plans?exam=${examId}`} className={buttonClasses('premium')}>
+            See plans for this exam
           </Link>
         </div>
       </div>

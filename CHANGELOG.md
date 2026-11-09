@@ -1,5 +1,22 @@
 # Changelog
 
+## Phase 11B — Dynamic plans: exams, bundles, limits and two currencies
+
+- **Plans for one exam, a bundle of exams, or everything**, each 1, 3, 6 or 12 months, priced in LKR and/or USD.
+- **Attempt limits per exam type**: Practice, Mock and Adaptive are each unlimited, a number of attempts (per subject in
+  a bundle), or not included. Enforced by the server on every start; each attempt counts once.
+- **What a student buys is frozen**: later price, limit or bundle changes don't affect it. New plans start straight
+  away and add to existing ones; an unlimited plan is used first, then the limited plan ending soonest, then free
+  attempts.
+- **Pricing page**: bundles by category, single subjects, and everything; LKR/USD switch; per-month price and best
+  value; `?exam=` shows only plans for one exam (linked from locked exams).
+- **Checkout** in the chosen currency, showing what the plan covers and its limits.
+- **Account page**: each active plan with attempts left per exam type on each subject.
+- **Administration → Plans & payments**: create, edit, hide or delete (if unpaid) plans; pick one exam or tick the
+  exams of a bundle by category; set both prices and the limits.
+- **Backend**: subscription-service migration V5 (`plan_exam`, `entitlement_exam`, `entitlement_use`, plan scope,
+  prices and limits); contract updated; ADR-011 amended.
+
 ## Phase 11 — Subscriptions and payments (PayHere)
 
 - **Premium plans** (`/plans`, "Pricing" in the header): plans on sale with price, price per month, the best-value plan

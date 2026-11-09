@@ -3,13 +3,15 @@ import { cn } from '@/lib/cn';
 
 export interface TextFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> {
   label: string;
+  /** Visually hide the label (it stays available to screen readers). */
+  hideLabel?: boolean;
   help?: string;
   error?: string | undefined;
 }
 
 /** Labelled text input with help text and an error message wired up for assistive technology. */
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function TextField(
-  { label, help, error, className, ...rest },
+  { label, hideLabel = false, help, error, className, ...rest },
   ref,
 ) {
   const id = useId();
@@ -18,7 +20,7 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
   const describedBy = [helpId, errorId].filter(Boolean).join(' ') || undefined;
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-semibold text-ink">
+      <label htmlFor={id} className={cn('text-sm font-semibold text-ink', hideLabel && 'sr-only')}>
         {label}
       </label>
       <input
