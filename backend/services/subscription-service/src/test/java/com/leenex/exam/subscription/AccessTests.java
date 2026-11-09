@@ -82,6 +82,7 @@ class AccessTests {
     @BeforeEach
     void cleanState() {
         jdbc.update("TRUNCATE exam_view, free_attempt_use, processed_event, feed_cursor");
+        jdbc.update("TRUNCATE entitlement_use");
         jdbc.update("DELETE FROM entitlement");
         FEED.clear();
     }

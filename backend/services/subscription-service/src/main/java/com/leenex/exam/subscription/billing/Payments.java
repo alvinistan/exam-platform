@@ -14,7 +14,7 @@ public class Payments {
     public record Transaction(UUID id, UUID studentId, UUID planId, String planName, int durationMonths,
                               String provider, String providerRef, String idempotencyKey, long amountMinor,
                               String currency, String status, String failureReason, OffsetDateTime createdAt,
-                              OffsetDateTime updatedAt) {
+                              OffsetDateTime updatedAt, String planSnapshot) {
 
         /** "4500.00", as PayHere sends and expects amounts. */
         public String amount() {
@@ -28,7 +28,7 @@ public class Payments {
 
     private static final String TX = """
             id, student_id, plan_id, plan_name, duration_months, provider, provider_ref, idempotency_key, amount_minor, currency, status,
-            failure_reason, created_at, updated_at
+            failure_reason, created_at, updated_at, plan_snapshot
             """;
 
     private final JdbcClient jdbc;
@@ -41,16 +41,18 @@ public class Payments {
 
     /** False when this student already used the key (a repeated or simultaneous request). */
     public boolean insertTransaction(UUID id, UUID studentId, Plans.Plan plan, String provider, String key, long amountMinor,
-                                  String currency) {
+                                     String currency, String planSnapshotJson) {
         return jdbc.sql("""
                 INSERT INTO payment_transaction (id, student_id, plan_id, plan_name, duration_months, provider,
-                    idempotency_key, amount_minor, currency)
-                VALUES (:id, :student, :plan, :name, :months, :provider, :key, :amount, :currency)
+                    idempotency_key, amount_minor, currency, plan_snapshot)
+                VALUES (:id, :student, :plan, :name, :months, :provider, :key, :amount, :currency,
+                    CAST(:snapshot AS jsonb))
                 ON CONFLICT (student_id, idempotency_key) DO NOTHING
                 """)
                 .param("id", id).param("student", studentId).param("plan", plan.id()).param("name", plan.name())
                 .param("months", (short) plan.durationMonths()).param("provider", provider)
                 .param("key", key).param("amount", amountMinor).param("currency", currency)
+                .param("snapshot", planSnapshotJson)
                 .update() == 1;
     }
 
@@ -167,15 +169,23 @@ public class Payments {
                 """).param("s", studentId).param("at", at).query(Boolean.class).single();
     }
 
+    /** A bought entitlement, with its own copy of what the plan covered and its limits. */
     public void insertSubscriptionEntitlement(UUID id, UUID studentId, UUID subscriptionId, OffsetDateTime startsAt,
-                                              OffsetDateTime endsAt) {
+                                              OffsetDateTime endsAt, String planName, String scopeType,
+                                              List<UUID> examIds, Plans.Limits limits) {
         jdbc.sql("""
-                INSERT INTO entitlement (id, student_id, source, subscription_id, starts_at, ends_at)
-                VALUES (:id, :student, 'SUBSCRIPTION', :sub, :starts, :ends)
+                INSERT INTO entitlement (id, student_id, source, subscription_id, starts_at, ends_at, plan_name,
+                    scope_type, limit_practice, limit_mock, limit_adaptive)
+                VALUES (:id, :student, 'SUBSCRIPTION', :sub, :starts, :ends, :name, :scope, :practice, :mock, :adaptive)
                 """)
                 .param("id", id).param("student", studentId).param("sub", subscriptionId).param("starts", startsAt)
-                .param("ends", endsAt)
+                .param("ends", endsAt).param("name", planName).param("scope", scopeType)
+                .param("practice", limits.practice()).param("mock", limits.mock()).param("adaptive", limits.adaptive())
                 .update();
+        for (UUID examId : examIds) {
+            jdbc.sql("INSERT INTO entitlement_exam (entitlement_id, exam_id) VALUES (:e, :x)").param("e", id)
+                    .param("x", examId).update();
+        }
     }
 
     public void revokeSubscriptionEntitlement(UUID subscriptionId, String reason) {
@@ -219,7 +229,7 @@ public class Payments {
                 rs.getString("provider"), rs.getString("provider_ref"),
                 rs.getString("idempotency_key"), rs.getLong("amount_minor"), rs.getString("currency"),
                 rs.getString("status"), rs.getString("failure_reason"), rs.getObject("created_at", OffsetDateTime.class),
-                rs.getObject("updated_at", OffsetDateTime.class));
+                rs.getObject("updated_at", OffsetDateTime.class), rs.getString("plan_snapshot"));
     }
 
     private static Period period(java.sql.ResultSet rs, int n) throws java.sql.SQLException {
