@@ -8,6 +8,7 @@ import com.leenex.exam.subscription.billing.Payments.Transaction;
 import com.leenex.exam.subscription.config.SubscriptionProperties;
 import com.leenex.exam.subscription.promo.Pricing;
 import com.leenex.exam.subscription.support.AuditLog;
+import com.leenex.exam.subscription.support.Requests;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -64,7 +65,7 @@ public class PaymentService {
 
     // --- checkout -----------------------------------------------------------------------------------------------------
 
-    /** Buyer details PayHere requires on its form; passed through, not stored. */
+    /** Buyer details PayHere requires on its form; passed through, not stored. Null when PayHere isn't used. */
     public record Customer(String firstName, String lastName, String email, String phone, String address, String city,
                            String country) {
     }
@@ -89,6 +90,9 @@ public class PaymentService {
                     .orElseThrow(() -> new ApiException(ProblemCode.NOT_FOUND, "This plan isn't available."));
             Pricing.Quote price = pricing.quote(studentId, plan, currency, code, clock.instant(), true);
             String provider = price.totalMinor() == 0 ? "FREE" : provider();
+            if ("PAYHERE".equals(provider) && customer == null) {
+                throw Requests.invalid("customer", "PayHere needs your name, email, phone and address");
+            }
             UUID id = UuidV7.generate();
             if (!payments.insertTransaction(id, studentId, plan, provider, idempotencyKey, price,
                     json.writeValueAsString(Snapshot.of(plan)))) {
@@ -157,6 +161,9 @@ public class PaymentService {
         if ("TEST".equals(tx.provider())) {
             return new Checkout(tx.id(), tx.provider(), tx.status(), URI.create(base + "/checkout/test/" + tx.id()), "GET",
                     Map.of());
+        }
+        if (customer == null) {
+            throw Requests.invalid("customer", "PayHere needs your name, email, phone and address");
         }
         SubscriptionProperties.PayHere payhere = settings.payhere();
         Map<String, String> f = new LinkedHashMap<>();

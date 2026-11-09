@@ -142,8 +142,9 @@ public class AccessService {
                 allowances(grants, usage, examId, mode), freeUsed);
         if (consume && choice.decision().allowed()) {
             if (choice.entitlementId() != null) {
-                UUID paidBy = choice.entitlementId();
-                Grant chosen = grants.stream().filter(g -> g.id().equals(paidBy)).findFirst().orElseThrow();
+                UUID chosenId = choice.entitlementId();
+                Grant chosen = grants.stream().filter(g -> g.id().equals(chosenId)).findFirst().orElseThrow();
+                UUID paidBy = chosenId;
                 if (chosen.virtual()) {
                     // First use of a campaign open to everyone: the student's entitlement row is created now.
                     Campaigns.Campaign c = campaigns.find(chosen.campaignId()).orElseThrow();

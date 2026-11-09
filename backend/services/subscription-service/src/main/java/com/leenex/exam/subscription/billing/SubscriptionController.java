@@ -66,11 +66,14 @@ public class SubscriptionController {
             @NotBlank @Size(max = 50) String country) {
     }
 
-    /** @param currency LKR or USD; defaults to LKR when the plan has an LKR price, otherwise USD */
+    /**
+     * @param currency LKR or USD (default LKR)
+     * @param customer required for PayHere; not needed when a code makes the plan free, or for the TEST stand-in
+     */
     public record CheckoutInput(@NotNull UUID planId,
                                 @Pattern(regexp = "LKR|USD", message = "must be LKR or USD") String currency,
                                 @Size(max = 40) String code,
-                                @NotNull @Valid CustomerInput customer) {
+                                @Valid CustomerInput customer) {
     }
 
     /** @param code a discount code, optional */
@@ -100,8 +103,8 @@ public class SubscriptionController {
         }
         CustomerInput c = in.customer();
         PaymentService.Checkout checkout = service.checkout(CurrentUser.id(), in.planId(),
-                in.currency() == null ? "LKR" : in.currency(), in.code(), key,
-                new PaymentService.Customer(c.firstName().strip(), c.lastName().strip(), c.email().strip(),
+                in.currency() == null ? "LKR" : in.currency(), in.code(), key, c == null ? null
+                        : new PaymentService.Customer(c.firstName().strip(), c.lastName().strip(), c.email().strip(),
                         c.phone().strip(), c.address().strip(), c.city().strip(), c.country().strip()));
         return ResponseEntity.status(HttpStatus.CREATED).body(checkout);
     }

@@ -81,6 +81,15 @@ class PayHerePaymentTests extends PaymentTestSupport {
     }
 
     @Test
+    void payHereNeedsTheBuyerDetails() throws Exception {
+        String planId = plan("no-details", 1, 450000, "LKR", true);
+        MockHttpServletResponse r = expect(call(post("/api/subscriptions/checkout").header("Idempotency-Key", "payhere-nodetails"),
+                student, Map.of("planId", planId)), 400);
+        assertThat((String) read(r, "$.errors[0].field")).isEqualTo("customer");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment_transaction", Integer.class)).isZero();
+    }
+
+    @Test
     void aGenuineNotificationActivatesPremiumAndARepeatIsIgnored() throws Exception {
         String tx = startCheckout();
         MockHttpServletResponse first = expect(notify(tx, "4500.00", "LKR", "2", "320027150501", SECRET), 200);
