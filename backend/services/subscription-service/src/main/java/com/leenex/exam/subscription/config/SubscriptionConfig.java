@@ -22,11 +22,11 @@ public class SubscriptionConfig {
         return rules -> rules.requestMatchers(HttpMethod.GET, "/api/access/exams").permitAll();
     }
 
-    /** Plans on sale are public; PayHere's servers post payment results without a token (the signature is checked). */
+    /** Plans on sale and open offers are public; PayHere's servers post payment results without a token (the signature is checked). */
     @Bean
     ApiAuthorizationRules publicBilling() {
         return rules -> rules
-                .requestMatchers(HttpMethod.GET, "/api/plans").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/plans", "/api/plans/offers").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/payments/webhooks/payhere").permitAll();
     }
 

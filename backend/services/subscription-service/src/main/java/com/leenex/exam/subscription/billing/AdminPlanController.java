@@ -16,7 +16,6 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.net.URI;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,7 +43,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminPlanController {
 
     private static final Set<Integer> LENGTHS = Set.of(1, 3, 6, 12);
-    private static final int MAX_BUNDLE = 100;
 
     private final Plans plans;
     private final ExamViewRepository exams;
@@ -81,7 +79,11 @@ public class AdminPlanController {
             @Min(0) @Max(10_000) Integer mockLimit,
             @Min(0) @Max(10_000) Integer adaptiveLimit,
             boolean active,
-            @Min(0) @Max(1000) int displayOrder) {
+            @Min(0) @Max(1000) int displayOrder,
+            @Min(100) @Max(100_000_000_00L) Long salePriceLkrMinor,
+            @Min(100) @Max(100_000_000_00L) Long salePriceUsdMinor,
+            java.time.OffsetDateTime saleStartsAt,
+            java.time.OffsetDateTime saleEndsAt) {
     }
 
     @PostMapping
@@ -136,32 +138,41 @@ public class AdminPlanController {
         if (in.priceLkrMinor() == null && in.priceUsdMinor() == null) {
             throw Requests.invalid("priceLkrMinor", "set an LKR price, a USD price, or both");
         }
-        if (Integer.valueOf(0).equals(in.practiceLimit()) && Integer.valueOf(0).equals(in.mockLimit())
-                && Integer.valueOf(0).equals(in.adaptiveLimit())) {
-            throw Requests.invalid("practiceLimit", "include at least one exam type");
-        }
-        List<UUID> examIds = List.copyOf(new LinkedHashSet<>(in.examIds() == null ? List.of() : in.examIds()));
-        switch (in.scopeType()) {
-            case "EXAM" -> {
-                if (examIds.size() != 1) {
-                    throw Requests.invalid("examIds", "choose exactly one exam");
-                }
-            }
-            case "BUNDLE" -> {
-                if (examIds.size() < 2 || examIds.size() > MAX_BUNDLE) {
-                    throw Requests.invalid("examIds", "choose between 2 and " + MAX_BUNDLE + " exams for a bundle");
-                }
-            }
-            default -> examIds = List.of();
-        }
-        if (!examIds.isEmpty() && exams.find(examIds).size() != examIds.size()) {
-            throw Requests.invalid("examIds", "includes an exam that doesn't exist");
-        }
+        Plans.Limits limits = new Plans.Limits(in.practiceLimit(), in.mockLimit(), in.adaptiveLimit());
+        Scopes.checkLimits(limits);
+        List<UUID> examIds = Scopes.examIds(in.scopeType(), in.examIds(), exams);
         String description = in.description() == null ? "" : in.description().strip();
         return new Plans.PlanData(in.name().strip(), description, in.scopeType(),
                 "ALL".equals(in.scopeType()) ? null : in.categoryId(), examIds, in.durationMonths(),
                 in.priceLkrMinor(), in.priceUsdMinor(),
-                new Plans.Limits(in.practiceLimit(), in.mockLimit(), in.adaptiveLimit()), in.active(), in.displayOrder());
+                limits, in.active(), in.displayOrder(), sale(in));
+    }
+
+    /** A sale needs a lower price than the regular one, in a currency the plan is sold in, and both dates. */
+    private static Plans.Sale sale(PlanInput in) {
+        if (in.salePriceLkrMinor() == null && in.salePriceUsdMinor() == null) {
+            return new Plans.Sale(null, null, null, null);
+        }
+        if (in.saleStartsAt() == null || in.saleEndsAt() == null || !in.saleEndsAt().isAfter(in.saleStartsAt())) {
+            throw Requests.invalid("saleEndsAt", "give a sale start and an end after it");
+        }
+        checkSale("salePriceLkrMinor", in.salePriceLkrMinor(), in.priceLkrMinor());
+        checkSale("salePriceUsdMinor", in.salePriceUsdMinor(), in.priceUsdMinor());
+        return new Plans.Sale(in.salePriceLkrMinor(), in.salePriceUsdMinor(),
+                in.saleStartsAt().truncatedTo(java.time.temporal.ChronoUnit.MINUTES),
+                in.saleEndsAt().truncatedTo(java.time.temporal.ChronoUnit.MINUTES));
+    }
+
+    private static void checkSale(String field, Long sale, Long regular) {
+        if (sale == null) {
+            return;
+        }
+        if (regular == null) {
+            throw Requests.invalid(field, "the plan isn't sold in this currency");
+        }
+        if (sale >= regular) {
+            throw Requests.invalid(field, "must be lower than the regular price");
+        }
     }
 
     private static Map<String, Object> summary(Plans.PlanData d) {

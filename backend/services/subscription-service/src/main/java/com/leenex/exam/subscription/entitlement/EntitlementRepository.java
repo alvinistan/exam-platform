@@ -54,10 +54,18 @@ public class EntitlementRepository {
      */
     public record Grant(UUID id, String source, String planName, String scopeType, List<UUID> examIds,
                         com.leenex.exam.subscription.billing.Plans.Limits limits, OffsetDateTime startsAt,
-                        OffsetDateTime endsAt) {
+                        OffsetDateTime endsAt, UUID campaignId) {
 
         public boolean covers(UUID examId) {
             return "ALL".equals(scopeType) || examIds.contains(examId);
+        }
+
+        /**
+         * A campaign open to every student that this student hasn't used yet: it has no entitlement row, and its
+         * {@code id} is the campaign's. The row is created when they first start an attempt with it.
+         */
+        public boolean virtual() {
+            return campaignId != null && id.equals(campaignId);
         }
     }
 
@@ -73,7 +81,8 @@ public class EntitlementRepository {
                         k -> new java.util.ArrayList<>()).add(rs.getObject("exam_id", UUID.class)))
                 .list();
         return jdbc.sql("""
-                SELECT id, source, plan_name, scope_type, limit_practice, limit_mock, limit_adaptive, starts_at, ends_at
+                SELECT id, source, plan_name, scope_type, limit_practice, limit_mock, limit_adaptive, starts_at, ends_at,
+                    campaign_id
                 FROM entitlement
                 WHERE student_id = :s AND revoked_at IS NULL AND starts_at <= :now AND ends_at > :now
                 ORDER BY ends_at, id
@@ -84,7 +93,8 @@ public class EntitlementRepository {
                             List.copyOf(exams.getOrDefault(id, List.of())),
                             new com.leenex.exam.subscription.billing.Plans.Limits(intOrNull(rs, "limit_practice"),
                                     intOrNull(rs, "limit_mock"), intOrNull(rs, "limit_adaptive")),
-                            rs.getObject("starts_at", OffsetDateTime.class), rs.getObject("ends_at", OffsetDateTime.class));
+                            rs.getObject("starts_at", OffsetDateTime.class), rs.getObject("ends_at", OffsetDateTime.class),
+                            rs.getObject("campaign_id", UUID.class));
                 }).list();
     }
 

@@ -72,6 +72,9 @@ abstract class PaymentTestSupport {
         jdbc.update("DELETE FROM entitlement");
         jdbc.update("DELETE FROM subscription");
         jdbc.update("DELETE FROM payment_transaction");
+        jdbc.update("TRUNCATE discount_code_plan, campaign_exam");
+        jdbc.update("DELETE FROM discount_code");
+        jdbc.update("DELETE FROM campaign");
         jdbc.update("DELETE FROM subscription_plan");
     }
 

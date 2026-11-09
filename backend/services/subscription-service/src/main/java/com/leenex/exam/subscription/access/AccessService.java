@@ -9,11 +9,12 @@ import com.leenex.exam.subscription.access.AccessRules.Status;
 import com.leenex.exam.subscription.catalogfeed.ExamViewRepository;
 import com.leenex.exam.subscription.catalogfeed.ExamViewRepository.ExamView;
 import com.leenex.exam.subscription.entitlement.EntitlementRepository;
-import com.leenex.exam.subscription.entitlement.EntitlementRepository.EntitlementRow;
 import com.leenex.exam.subscription.entitlement.EntitlementRepository.Grant;
 import com.leenex.exam.subscription.entitlement.EntitlementRepository.UseKey;
 import java.time.Clock;
+import com.leenex.exam.subscription.promo.Campaigns;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -36,14 +37,39 @@ public class AccessService {
 
     private final ExamViewRepository exams;
     private final EntitlementRepository entitlements;
+    private final Campaigns campaigns;
     private final JdbcClient jdbc;
     private final Clock clock;
 
-    public AccessService(ExamViewRepository exams, EntitlementRepository entitlements, JdbcClient jdbc, Clock clock) {
+    public AccessService(ExamViewRepository exams, EntitlementRepository entitlements, Campaigns campaigns,
+                         JdbcClient jdbc, Clock clock) {
         this.exams = exams;
         this.entitlements = entitlements;
+        this.campaigns = campaigns;
         this.jdbc = jdbc;
         this.clock = clock;
+    }
+
+    /**
+     * Everything that gives this student access now: their entitlements (bought, given, or from a campaign), plus
+     * campaigns open to every student that they haven't used yet (virtual grants, see {@link Grant#virtual()}).
+     */
+    public List<Grant> grants(UUID studentId) {
+        List<Grant> grants = new ArrayList<>(entitlements.activeGrants(studentId, clock.instant()));
+        java.util.Set<UUID> had = grants.stream().map(Grant::campaignId).filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        // A campaign the student already used appears through their entitlement row, even if it was revoked.
+        java.util.Set<UUID> used = new java.util.HashSet<>(jdbc.sql(
+                        "SELECT campaign_id FROM entitlement WHERE student_id = :s AND campaign_id IS NOT NULL")
+                .param("s", studentId).query(UUID.class).list());
+        for (Campaigns.Campaign c : campaigns.openToAll(OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC))) {
+            if (!had.contains(c.id()) && !used.contains(c.id())) {
+                grants.add(new Grant(c.id(), "CAMPAIGN", c.name(), c.scopeType(), c.examIds(), c.limits(), c.startsAt(),
+                        c.endsAt(), c.id()));
+            }
+        }
+        grants.sort(java.util.Comparator.comparing(Grant::endsAt).thenComparing(Grant::id));
+        return grants;
     }
 
     /** Access status for each requested exam; {@code studentId} is null for anonymous visitors. */
@@ -51,7 +77,7 @@ public class AccessService {
     public Map<UUID, Status> statuses(List<UUID> examIds, UUID studentId) {
         Map<UUID, ExamView> found = exams.find(examIds).stream()
                 .collect(Collectors.toMap(ExamView::examId, Function.identity()));
-        List<Grant> grants = studentId == null ? List.of() : entitlements.activeGrants(studentId, clock.instant());
+        List<Grant> grants = studentId == null ? List.of() : grants(studentId);
         Map<UseKey, Integer> usage = entitlements.usage(grants.stream().map(Grant::id).toList());
         Map<UUID, Map<String, Integer>> freeUsed = studentId == null ? Map.of() : freeUsedByExam(studentId, examIds);
         Map<UUID, Status> result = new LinkedHashMap<>();
@@ -81,8 +107,8 @@ public class AccessService {
     /** Whether the student has any active plan, and the one that ends last. */
     @Transactional(readOnly = true)
     public MyAccess me(UUID studentId) {
-        Optional<EntitlementRow> active = entitlements.activeFor(studentId, clock.instant());
-        return new MyAccess(active.isPresent(), active.map(e -> new EntitlementSummary(e.source(), e.endsAt())).orElse(null));
+        Optional<Grant> last = grants(studentId).stream().max(java.util.Comparator.comparing(Grant::endsAt));
+        return new MyAccess(last.isPresent(), last.map(g -> new EntitlementSummary(g.source(), g.endsAt())).orElse(null));
     }
 
     /**
@@ -103,7 +129,7 @@ public class AccessService {
         if (exam.isEmpty()) {
             return AccessRules.decide(false, List.of(), Map.of(), mode, List.of(), 0).decision();
         }
-        List<Grant> grants = entitlements.activeGrants(studentId, clock.instant());
+        List<Grant> grants = grants(studentId);
         if (attemptId != null) {
             Optional<Decision> retried = alreadyCounted(attemptId, studentId, exam.get(), mode, grants);
             if (retried.isPresent()) {
@@ -116,7 +142,14 @@ public class AccessService {
                 allowances(grants, usage, examId, mode), freeUsed);
         if (consume && choice.decision().allowed()) {
             if (choice.entitlementId() != null) {
-                entitlements.recordUse(attemptId, choice.entitlementId(), studentId, examId, mode);
+                UUID paidBy = choice.entitlementId();
+                Grant chosen = grants.stream().filter(g -> g.id().equals(paidBy)).findFirst().orElseThrow();
+                if (chosen.virtual()) {
+                    // First use of a campaign open to everyone: the student's entitlement row is created now.
+                    Campaigns.Campaign c = campaigns.find(chosen.campaignId()).orElseThrow();
+                    paidBy = campaigns.grant(c, studentId, c.startsAt(), c.endsAt());
+                }
+                entitlements.recordUse(attemptId, paidBy, studentId, examId, mode);
             } else {
                 jdbc.sql("""
                         INSERT INTO free_attempt_use (attempt_id, student_id, exam_id, mode) VALUES (:a, :s, :e, :m)

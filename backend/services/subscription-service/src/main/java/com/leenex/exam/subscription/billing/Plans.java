@@ -37,12 +37,35 @@ public class Plans {
         }
     }
 
-    public record Plan(UUID id, String code, String name, String description, String scopeType, UUID categoryId,
-                       List<UUID> examIds, int durationMonths, Long priceLkrMinor, Long priceUsdMinor, Limits limits,
-                       boolean active, int displayOrder, int version, OffsetDateTime updatedAt) {
+    /** A lower price between two dates (introductory offers); either currency may be absent. */
+    public record Sale(Long priceLkrMinor, Long priceUsdMinor, OffsetDateTime startsAt, OffsetDateTime endsAt) {
+
+        public boolean onAt(java.time.Instant now) {
+            return startsAt != null && endsAt != null && !now.isBefore(startsAt.toInstant())
+                    && now.isBefore(endsAt.toInstant());
+        }
 
         public Long priceMinor(String currency) {
             return "USD".equals(currency) ? priceUsdMinor : "LKR".equals(currency) ? priceLkrMinor : null;
+        }
+    }
+
+    public record Plan(UUID id, String code, String name, String description, String scopeType, UUID categoryId,
+                       List<UUID> examIds, int durationMonths, Long priceLkrMinor, Long priceUsdMinor, Limits limits,
+                       boolean active, int displayOrder, int version, OffsetDateTime updatedAt, Sale sale) {
+
+        public Long priceMinor(String currency) {
+            return "USD".equals(currency) ? priceUsdMinor : "LKR".equals(currency) ? priceLkrMinor : null;
+        }
+
+        /** The price to charge now: the sale price while the sale is on (and set for that currency), else the price. */
+        public Long priceNow(String currency, java.time.Instant now) {
+            Long regular = priceMinor(currency);
+            if (regular == null || sale == null || !sale.onAt(now)) {
+                return regular;
+            }
+            Long onSale = sale.priceMinor(currency);
+            return onSale != null && onSale < regular ? onSale : regular;
         }
 
         /** Whether the plan includes this exam (an EXAM or BUNDLE plan lists it, or the plan covers everything). */
@@ -58,7 +81,8 @@ public class Plans {
 
     private static final String COLUMNS = """
             id, code, name, description, scope_type, category_id, duration_months, price_lkr_minor, price_usd_minor,
-            limit_practice, limit_mock, limit_adaptive, active, display_order, version, updated_at
+            limit_practice, limit_mock, limit_adaptive, active, display_order, version, updated_at,
+            sale_price_lkr_minor, sale_price_usd_minor, sale_starts_at, sale_ends_at
             """;
 
     private final JdbcClient jdbc;
@@ -92,15 +116,16 @@ public class Plans {
 
     public record PlanData(String name, String description, String scopeType, UUID categoryId, List<UUID> examIds,
                            int durationMonths, Long priceLkrMinor, Long priceUsdMinor, Limits limits, boolean active,
-                           int displayOrder) {
+                           int displayOrder, Sale sale) {
     }
 
     public void insert(UUID id, String code, PlanData d) {
         jdbc.sql("""
                 INSERT INTO subscription_plan (id, code, name, description, scope_type, category_id, duration_months,
-                    price_lkr_minor, price_usd_minor, limit_practice, limit_mock, limit_adaptive, active, display_order)
+                    price_lkr_minor, price_usd_minor, limit_practice, limit_mock, limit_adaptive, active, display_order,
+                    sale_price_lkr_minor, sale_price_usd_minor, sale_starts_at, sale_ends_at)
                 VALUES (:id, :code, :name, :description, :scope, :category, :months, :lkr, :usd, :practice, :mock,
-                    :adaptive, :active, :order)
+                    :adaptive, :active, :order, :saleLkr, :saleUsd, :saleStarts, :saleEnds)
                 """)
                 .param("id", id).param("code", code).params(params(d))
                 .update();
@@ -113,7 +138,8 @@ public class Plans {
                 UPDATE subscription_plan SET name = :name, description = :description, scope_type = :scope,
                     category_id = :category, duration_months = :months, price_lkr_minor = :lkr, price_usd_minor = :usd,
                     limit_practice = :practice, limit_mock = :mock, limit_adaptive = :adaptive, active = :active,
-                    display_order = :order, updated_at = now(), version = version + 1
+                    display_order = :order, sale_price_lkr_minor = :saleLkr, sale_price_usd_minor = :saleUsd,
+                    sale_starts_at = :saleStarts, sale_ends_at = :saleEnds, updated_at = now(), version = version + 1
                 WHERE id = :id AND version = :version
                 """)
                 .param("id", id).param("version", version).params(params(d))
@@ -150,6 +176,11 @@ public class Plans {
         m.put("adaptive", d.limits().adaptive());
         m.put("active", d.active());
         m.put("order", d.displayOrder());
+        Sale sale = d.sale() == null ? new Sale(null, null, null, null) : d.sale();
+        m.put("saleLkr", sale.priceLkrMinor());
+        m.put("saleUsd", sale.priceUsdMinor());
+        m.put("saleStarts", sale.startsAt());
+        m.put("saleEnds", sale.endsAt());
         return m;
     }
 
@@ -166,7 +197,7 @@ public class Plans {
         return plans.stream().map(p -> new Plan(p.id(), p.code(), p.name(), p.description(), p.scopeType(),
                 p.categoryId(), List.copyOf(exams.getOrDefault(p.id(), List.of())), p.durationMonths(),
                 p.priceLkrMinor(), p.priceUsdMinor(), p.limits(), p.active(), p.displayOrder(), p.version(),
-                p.updatedAt())).toList();
+                p.updatedAt(), p.sale())).toList();
     }
 
     static Integer nullableInt(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
@@ -187,6 +218,9 @@ public class Plans {
                 new Limits(nullableInt(rs, "limit_practice"), nullableInt(rs, "limit_mock"),
                         nullableInt(rs, "limit_adaptive")),
                 rs.getBoolean("active"), rs.getInt("display_order"), rs.getInt("version"),
-                rs.getObject("updated_at", OffsetDateTime.class));
+                rs.getObject("updated_at", OffsetDateTime.class),
+                new Sale(nullableLong(rs, "sale_price_lkr_minor"), nullableLong(rs, "sale_price_usd_minor"),
+                        rs.getObject("sale_starts_at", OffsetDateTime.class),
+                        rs.getObject("sale_ends_at", OffsetDateTime.class)));
     }
 }
