@@ -309,6 +309,12 @@ public class QuestionService {
 
     // --- helpers ----------------------------------------------------------------------------------------------------
 
+    private static void checkFormulas(String field, String problem, List<Map<String, String>> errors) {
+        if (problem != null) {
+            errors.add(error(field, problem));
+        }
+    }
+
     /** Sanitises and checks the shape of an edit. Completeness (FR-QB-04) is checked separately. */
     private QuestionContent prepare(Input in, UUID currentTopicId) {
         List<Map<String, String>> errors = new ArrayList<>();
@@ -325,6 +331,7 @@ public class QuestionService {
             errors.add(error("stemHtml", "write the question or add an image"));
         }
         checkMedia(stemMedia, in.stemMediaAlt(), "stemMediaKey", errors);
+        checkFormulas("stemHtml", Formulas.problemInHtml(stem), errors);
         if (in.options().size() > 5) {
             errors.add(error("options", "at most 5 options"));
         }
@@ -342,7 +349,9 @@ public class QuestionService {
                     errors.add(error(field + ".misconceptionId", "misconception does not exist"));
                 }
             }
-            options.add(new Option(String.valueOf(LABELS.charAt(i)), richText.sanitize(o.bodyHtml()), mediaKey,
+            String body = richText.sanitize(o.bodyHtml());
+            checkFormulas(field + ".bodyHtml", Formulas.problemInHtml(body), errors);
+            options.add(new Option(String.valueOf(LABELS.charAt(i)), body, mediaKey,
                     mediaKey == null || o.mediaAlt() == null ? null : o.mediaAlt().strip(), o.correct(),
                     o.misconceptionId()));
         }
@@ -360,16 +369,24 @@ public class QuestionService {
         if (tags.size() > 20) {
             errors.add(error("tags", "at most 20 tags"));
         }
-        if (!errors.isEmpty()) {
-            throw Requests.invalid(errors);
-        }
+        String explanation = richText.sanitize(in.explanationHtml());
+        checkFormulas("explanationHtml", Formulas.problemInHtml(explanation), errors);
         List<String> keyPoints = in.keyPoints() == null ? List.of()
                 : in.keyPoints().stream().map(String::strip).filter(s -> !s.isEmpty()).toList();
+        for (int i = 0; i < keyPoints.size(); i++) {
+            checkFormulas("keyPoints[" + i + "]", Formulas.problem(keyPoints.get(i)), errors);
+        }
         List<Definition> definitions = in.definitions() == null ? List.of()
                 : in.definitions().stream().filter(d -> d.term() != null && !d.term().isBlank())
                 .map(d -> new Definition(d.term().strip(), d.meaning() == null ? "" : d.meaning().strip())).toList();
+        for (int i = 0; i < definitions.size(); i++) {
+            checkFormulas("definitions[" + i + "].meaning", Formulas.problem(definitions.get(i).meaning()), errors);
+        }
+        if (!errors.isEmpty()) {
+            throw Requests.invalid(errors);
+        }
         return new QuestionContent(in.topicId(), in.answerType(), stem, stemMedia,
-                stemMedia == null ? null : in.stemMediaAlt().strip(), options, richText.sanitize(in.explanationHtml()),
+                stemMedia == null ? null : in.stemMediaAlt().strip(), options, explanation,
                 definitions, keyPoints, in.difficulty(), in.estSeconds(), in.marks() == null ? BigDecimal.ONE : in.marks(),
                 List.copyOf(tags));
     }

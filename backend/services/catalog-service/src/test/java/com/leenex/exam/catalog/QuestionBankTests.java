@@ -63,6 +63,36 @@ class QuestionBankTests extends CatalogTestSupport {
     }
 
     @Test
+    void formulasAreKeptAsTextAndUnclosedOnesAreRefused() throws Exception {
+        Content content = createContent();
+        Map<String, Object> input = questionInput(content.topicId(), "MAIN", "x");
+        input.put("stemHtml", "<p>Solve \\(x^2 - 5x + 6 = 0\\) where \\(x < 10\\).</p><p>\\[\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\\]</p>");
+        input.put("options", List.of(option("\\(x = 2\\) or \\(x = 3\\)", true), option("\\(\\ce{H2O}\\)", false),
+                option("\\(x = 1\\)", false), option("It costs $5", false)));
+        input.put("keyPoints", List.of("Factorise: \\((x-2)(x-3)\\)"));
+        MockHttpServletResponse r = expect(adminPost(Q, input), 201);
+        // The sanitiser may store + and = as entities; browsers decode them before KaTeX reads the text.
+        assertThat(org.springframework.web.util.HtmlUtils.htmlUnescape(read(r, "$.stemHtml"))).contains("\\(x^2 - 5x + 6 = 0\\)",
+                "\\(x < 10\\)", "\\[\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}\\]");
+        assertThat((String) read(r, "$.options[1].bodyHtml")).contains("\\(\\ce{H2O}\\)");
+        assertThat((List<String>) read(r, "$.keyPoints")).containsExactly("Factorise: \\((x-2)(x-3)\\)");
+
+        Map<String, Object> unclosed = questionInput(content.topicId(), "MAIN", "x");
+        unclosed.put("stemHtml", "<p>Solve \\(x^2 = 4</p>");
+        MockHttpServletResponse refused = expect(adminPost(Q, unclosed), 400);
+        assertThat((String) read(refused, "$.errors[0].field")).isEqualTo("stemHtml");
+        assertThat((String) read(refused, "$.errors[0].message")).startsWith("a formula starting with \\( isn");
+
+        Map<String, Object> badOption = questionInput(content.topicId(), "MAIN", "x");
+        badOption.put("options", List.of(option("x\\)", true), option("b", false)));
+        assertThat((String) read(expect(adminPost(Q, badOption), 400), "$.errors[0].field")).isEqualTo("options[0].bodyHtml");
+
+        Map<String, Object> badKeyPoint = questionInput(content.topicId(), "MAIN", "x");
+        badKeyPoint.put("keyPoints", List.of("fine", "\\[ \\]"));
+        assertThat((String) read(expect(adminPost(Q, badKeyPoint), 400), "$.errors[0].field")).isEqualTo("keyPoints[1]");
+    }
+
+    @Test
     void shapeErrorsAreRefusedWithTheField() throws Exception {
         Content content = createContent();
         Map<String, Object> noStem = questionInput(content.topicId(), "MAIN", "x");

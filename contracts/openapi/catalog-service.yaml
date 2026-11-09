@@ -1202,7 +1202,14 @@ components:
         topicId: { type: string, format: uuid }
         bank: { $ref: '#/components/schemas/Bank', description: Required on create; must match on save. }
         answerType: { type: string, enum: [SINGLE, MULTI] }
-        stemHtml: { type: string, maxLength: 20000, description: Sanitised server-side with an allow-list. Text or an image is required. }
+        stemHtml:
+          type: string
+          maxLength: 20000
+          description: >-
+            Sanitised server-side with an allow-list. Text or an image is required. Formulas are LaTeX text between \( and
+            \) or \[ and \] (typeset by KaTeX in the browser); each must close within the same run of unformatted text,
+            be non-empty and at most 1000 characters (400 on the field otherwise). The same applies to option bodies, the
+            explanation, key points and definition meanings.
         stemMediaKey: { type: string }
         stemMediaAlt: { type: string, maxLength: 250 }
         options: { type: array, maxItems: 5, items: { $ref: '#/components/schemas/OptionInput' }, description: Drafts may have fewer than 4. }

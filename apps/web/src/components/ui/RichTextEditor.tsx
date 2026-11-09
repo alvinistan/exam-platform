@@ -1,8 +1,10 @@
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { Bold, Code, Italic, List, ListOrdered, Underline } from 'lucide-react';
+import { Bold, Code, Italic, List, ListOrdered, Sigma, Underline } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { parseFormula } from '@/lib/math';
+import { FormulaDialog, type FormulaValue } from './FormulaDialog';
 
 interface RichTextEditorProps {
   label: string;
@@ -17,7 +19,8 @@ interface RichTextEditorProps {
 
 /**
  * Rich text limited to what questions may contain (FR-QB-01): paragraphs, bold, italic, underline, inline code and
- * lists. The server sanitises again with the same allow-list, so nothing else can be stored.
+ * lists. The server sanitises again with the same allow-list, so nothing else can be stored. Formulas are LaTeX text
+ * between \( \) or \[ \]; the Formula button writes them with a preview.
  */
 export function RichTextEditor({ label, value, onChange, help, error, compact = false, hideLabel = false }: RichTextEditorProps) {
   const id = useId();
@@ -49,6 +52,7 @@ export function RichTextEditor({ label, value, onChange, help, error, compact = 
     onUpdate: ({ editor: e }) => onChange(e.isEmpty ? '' : e.getHTML()),
     immediatelyRender: true,
   });
+  const [formula, setFormula] = useState<{ initial: FormulaValue | null; from: number; to: number } | null>(null);
   const active = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -61,6 +65,17 @@ export function RichTextEditor({ label, value, onChange, help, error, compact = 
     }),
   });
 
+  const openFormula = () => {
+    const { from, to } = editor.state.selection;
+    setFormula({ initial: parseFormula(editor.state.doc.textBetween(from, to, ' ')), from, to });
+  };
+  const insertFormula = ({ latex, display }: FormulaValue) => {
+    if (!formula) return;
+    const text = display ? `\\[${latex}\\]` : `\\(${latex}\\)`;
+    editor.chain().focus().insertContentAt({ from: formula.from, to: formula.to }, { type: 'text', text }).run();
+    setFormula(null);
+  };
+
   const tools = [
     { name: 'Bold', icon: Bold, on: active.bold, run: () => editor.chain().focus().toggleBold().run() },
     { name: 'Italic', icon: Italic, on: active.italic, run: () => editor.chain().focus().toggleItalic().run() },
@@ -72,6 +87,7 @@ export function RichTextEditor({ label, value, onChange, help, error, compact = 
           { name: 'Bulleted list', icon: List, on: active.bullet, run: () => editor.chain().focus().toggleBulletList().run() },
           { name: 'Numbered list', icon: ListOrdered, on: active.ordered, run: () => editor.chain().focus().toggleOrderedList().run() },
         ]),
+    { name: 'Formula', icon: Sigma, on: false, run: openFormula },
   ];
 
   return (
@@ -116,6 +132,7 @@ export function RichTextEditor({ label, value, onChange, help, error, compact = 
           {error}
         </p>
       )}
+      {formula && <FormulaDialog initial={formula.initial} onInsert={insertFormula} onClose={() => setFormula(null)} />}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { useLibrary } from '@/features/admin/catalog/api';
 import { QuestionView } from '@/features/questions/QuestionView';
 import { ApiError } from '@/lib/api/problem';
 import { cn } from '@/lib/cn';
+import { formulaProblem } from '@/lib/mathCheck';
 import { ImageField, type ImageValue } from './ImageField';
 import {
   bankLabels,
@@ -203,8 +204,29 @@ function Editor({ question, initialTopicId, limitToSubjectIds, onSaved }: Props)
       setError('topicId', { message: 'Choose a topic.' });
       return;
     }
+    if (!formulasOk(v)) return;
     save.mutate(v);
   });
+
+  /** A formula students would see as red source text can't be saved; the problem is shown on its field. */
+  const formulasOk = (v: FormValues) => {
+    const problems: [FieldPath<FormValues>, string | null][] = [
+      ['stemHtml', formulaProblem(v.stemHtml)],
+      ...v.options.map((o, i) => [`options.${i}.bodyHtml`, formulaProblem(o.bodyHtml)] as [FieldPath<FormValues>, string | null]),
+      ['explanationHtml', formulaProblem(v.explanationHtml)],
+      ...v.keyPoints.map((k, i) => [`keyPoints.${i}.text`, formulaProblem(k.text, false)] as [FieldPath<FormValues>, string | null]),
+      ...v.definitions.map(
+        (d, i) => [`definitions.${i}.meaning`, formulaProblem(d.meaning, false)] as [FieldPath<FormValues>, string | null],
+      ),
+    ];
+    let first = true;
+    for (const [field, problem] of problems) {
+      if (!problem) continue;
+      setError(field, { message: problem }, { shouldFocus: first });
+      first = false;
+    }
+    return first;
+  };
 
   const setCorrect = (index: number, checked: boolean) => {
     if (getValues('answerType') === 'SINGLE' && checked) {
@@ -353,7 +375,14 @@ function Editor({ question, initialTopicId, limitToSubjectIds, onSaved }: Props)
                     control={control}
                     name={`options.${i}.bodyHtml`}
                     render={({ field: f }) => (
-                      <RichTextEditor compact hideLabel label={`Option ${label} text`} value={f.value} onChange={f.onChange} />
+                      <RichTextEditor
+                        compact
+                        hideLabel
+                        label={`Option ${label} text`}
+                        value={f.value}
+                        onChange={f.onChange}
+                        error={errors.options?.[i]?.bodyHtml?.message}
+                      />
                     )}
                   />
                   <Controller
@@ -408,7 +437,13 @@ function Editor({ question, initialTopicId, limitToSubjectIds, onSaved }: Props)
             control={control}
             name="explanationHtml"
             render={({ field }) => (
-              <RichTextEditor label="Why the answer is right" value={field.value} onChange={field.onChange} help="Shown when answers are revealed." />
+              <RichTextEditor
+                label="Why the answer is right"
+                value={field.value}
+                onChange={field.onChange}
+                help="Shown when answers are revealed."
+                error={errors.explanationHtml?.message}
+              />
             )}
           />
           <fieldset className="flex flex-col gap-2">
@@ -416,7 +451,12 @@ function Editor({ question, initialTopicId, limitToSubjectIds, onSaved }: Props)
             {keyPoints.fields.map((f, i) => (
               <div key={f.id} className="flex items-end gap-2">
                 <div className="flex-1">
-                  <TextField label={`Key point ${i + 1}`} maxLength={300} {...register(`keyPoints.${i}.text`)} />
+                  <TextField
+                    label={`Key point ${i + 1}`}
+                    maxLength={300}
+                    error={errors.keyPoints?.[i]?.text?.message}
+                    {...register(`keyPoints.${i}.text`)}
+                  />
                 </div>
                 <Button size="sm" variant="ghost" aria-label={`Remove key point ${i + 1}`} onClick={() => keyPoints.remove(i)}>
                   <Trash2 aria-hidden="true" className="size-4" />
@@ -436,7 +476,12 @@ function Editor({ question, initialTopicId, limitToSubjectIds, onSaved }: Props)
             {definitions.fields.map((f, i) => (
               <div key={f.id} className="grid items-end gap-2 sm:grid-cols-[200px_1fr_auto]">
                 <TextField label={`Term ${i + 1}`} maxLength={120} {...register(`definitions.${i}.term`)} />
-                <TextField label={`Meaning ${i + 1}`} maxLength={1000} {...register(`definitions.${i}.meaning`)} />
+                <TextField
+                  label={`Meaning ${i + 1}`}
+                  maxLength={1000}
+                  error={errors.definitions?.[i]?.meaning?.message}
+                  {...register(`definitions.${i}.meaning`)}
+                />
                 <Button size="sm" variant="ghost" aria-label={`Remove definition ${i + 1}`} onClick={() => definitions.remove(i)}>
                   <Trash2 aria-hidden="true" className="size-4" />
                 </Button>
