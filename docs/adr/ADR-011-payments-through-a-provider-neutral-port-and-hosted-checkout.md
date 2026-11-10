@@ -54,3 +54,21 @@ The product owner chose **PayHere** (D8). How the decision is applied:
   recorded once against one allowance (`entitlement_use` / `free_attempt_use`), so retries and parallel starts can't
   overspend.
 - A plan with payments can't be deleted, only hidden.
+
+## Amendment — Phase 11C (9 Nov 2026): promotions
+
+- **Price at checkout** = the plan's regular price, or its sale price while the sale is on, less a discount code. It is
+  worked out by the server at checkout (the quote endpoint is only for display) and recorded on the payment
+  (`list_price_minor`, `discount_code_id`, `discount_minor`, `amount_minor`). PayHere's notification is checked against
+  `amount_minor`, so a changed price can't be paid at the old amount.
+- **Discount code uses** are payments with the code that are PENDING or SUCCEEDED. Checkouts with the same code are
+  serialised by locking the code row, so the limits can't be overspent by parallel checkouts. A pending payment holds
+  its use until it fails or is abandoned (24 h).
+- **Free with a code**: when the total is 0, the payment is created with provider `FREE` and applied at once through
+  the same `apply()` path as a verified provider message (event id `<tx>:FREE`), so activation, entitlements, the
+  outbox and the audit are identical. No buyer details are needed; PayHere still requires them.
+- **Campaigns** grant access through the same entitlements (`source = CAMPAIGN`) and limits as plans. Campaigns for
+  chosen students create entitlements at once. Campaigns for everyone are "virtual" grants until a student's first
+  counted start creates their entitlement row (`UNIQUE (campaign_id, student_id)`), so a campaign for thousands of
+  students writes nothing up front. Ending a campaign closes it and revokes the entitlements it created.
+

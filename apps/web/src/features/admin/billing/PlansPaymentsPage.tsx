@@ -8,6 +8,7 @@ import { useUserNames } from '@/features/admin/questions/api';
 import { useAdminPayments, useAdminPlans, usePlanExams, type AdminPlan } from './api';
 
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+const saleDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 
 const statusTone: Record<PaymentStatus, BadgeTone> = {
   SUCCEEDED: 'free',
@@ -29,8 +30,8 @@ export function PlansPaymentsPage() {
       <div>
         <h1 className="text-2xl font-extrabold tracking-tight">Plans &amp; payments</h1>
         <p className="text-muted">
-          Premium gives a student unlimited attempts on every exam for the length of their plan. Prices are yours to set; payments
-          go through PayHere.
+          A plan gives attempts on one exam, a bundle, or every exam for its length. Prices, sales and attempts are yours to set;
+          payments go through PayHere. Free access and discount codes are in Promotions.
         </p>
       </div>
       <PlansCard />
@@ -43,6 +44,7 @@ function PlansCard() {
   const plans = useAdminPlans();
   const exams = usePlanExams();
   const [editing, setEditing] = useState<AdminPlan | 'new' | null>(null);
+  const [now] = useState(() => Date.now());
   const titleOf = (id: string) => exams.data?.find((x) => x.id === id)?.title ?? 'Exam';
   const covers = (p: AdminPlan) =>
     p.scopeType === 'ALL'
@@ -116,6 +118,22 @@ function PlansCard() {
                   <td className="px-4 py-3 whitespace-nowrap tabular-nums">
                     {p.priceLkrMinor !== null && <span className="block">{formatPrice(p.priceLkrMinor, 'LKR')}</span>}
                     {p.priceUsdMinor !== null && <span className="block">{formatPrice(p.priceUsdMinor, 'USD')}</span>}
+                    {p.sale.endsAt !== null && Date.parse(p.sale.endsAt) > now && (
+                      <span className="mt-1 block text-[13px] text-warning-ink">
+                        Sale{' '}
+                        {[
+                          p.sale.priceLkrMinor !== null && formatPrice(p.sale.priceLkrMinor, 'LKR'),
+                          p.sale.priceUsdMinor !== null && formatPrice(p.sale.priceUsdMinor, 'USD'),
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                        <span className="block text-muted">
+                          {p.sale.startsAt && Date.parse(p.sale.startsAt) > now
+                            ? `from ${saleDate.format(new Date(p.sale.startsAt))}`
+                            : `until ${saleDate.format(new Date(p.sale.endsAt))}`}
+                        </span>
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {p.active ? <Badge tone="free">On sale</Badge> : <Badge tone="neutral">Hidden</Badge>}
@@ -187,11 +205,19 @@ function PaymentsCard() {
                   <td className="px-4 py-3 whitespace-nowrap">{dateTime.format(new Date(p.createdAt))}</td>
                   <td className="px-4 py-3 font-semibold">{names.data?.get(p.studentId) ?? 'Unknown user'}</td>
                   <td className="px-4 py-3">{p.planName}</td>
-                  <td className="px-4 py-3 whitespace-nowrap tabular-nums">{formatPrice(p.amountMinor, p.currency)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap tabular-nums">
+                    {formatPrice(p.amountMinor, p.currency)}
+                    {p.discountMinor > 0 && (
+                      <span className="block text-[13px] text-muted">
+                        −{formatPrice(p.discountMinor, p.currency)} with a code
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <Badge tone={statusTone[p.status]}>{statusLabel[p.status]}</Badge>
                     {p.failureReason === 'CHARGEDBACK' && <span className="block text-[13px] text-danger-ink">Charged back</span>}
                     {p.provider === 'TEST' && <span className="block text-[13px] text-muted">Test payment</span>}
+                    {p.provider === 'FREE' && <span className="block text-[13px] text-muted">Free with a code</span>}
                   </td>
                   <td className="px-4 py-3 font-mono text-[13px] text-ink-2">
                     {p.providerRef && p.provider === 'PAYHERE' ? p.providerRef : '—'}

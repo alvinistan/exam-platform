@@ -26,10 +26,21 @@ export interface PublicPlan {
   priceLkrMinor: number | null;
   priceUsdMinor: number | null;
   limits: Limits;
+  /** The price while a sale is on now; null when there is no sale in that currency. */
+  salePriceLkrMinor: number | null;
+  salePriceUsdMinor: number | null;
+  saleEndsAt: string | null;
 }
 
 export const priceIn = (p: Pick<PublicPlan, 'priceLkrMinor' | 'priceUsdMinor'>, currency: Currency) =>
   currency === 'USD' ? p.priceUsdMinor : p.priceLkrMinor;
+
+/** The sale price in a currency while a sale is on, else null. */
+export const saleIn = (p: Pick<PublicPlan, 'salePriceLkrMinor' | 'salePriceUsdMinor'>, currency: Currency) =>
+  currency === 'USD' ? p.salePriceUsdMinor : p.salePriceLkrMinor;
+
+/** What the plan costs today in a currency (the sale price while on); null when not sold in it. */
+export const priceNow = (p: PublicPlan, currency: Currency) => saleIn(p, currency) ?? priceIn(p, currency);
 
 export interface PlanCatalogue {
   provider: 'PAYHERE' | 'TEST';
@@ -39,6 +50,8 @@ export interface PlanCatalogue {
 }
 
 export type PaymentStatus = 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
+/** FREE: a discount code made the plan free, so no payment provider was involved. */
+export type Provider = 'PAYHERE' | 'TEST' | 'FREE';
 
 export interface Payment {
   id: string;
@@ -46,12 +59,14 @@ export interface Payment {
   durationMonths: number;
   amountMinor: number;
   currency: string;
-  provider: 'PAYHERE' | 'TEST';
+  provider: Provider;
   status: PaymentStatus;
   failureReason: 'CHARGEDBACK' | 'NOT_COMPLETED' | null;
   createdAt: string;
   premiumStartsAt: string | null;
   premiumEndsAt: string | null;
+  /** Taken off by a discount code. */
+  discountMinor: number;
 }
 
 export interface SubscriptionPeriod {
@@ -74,7 +89,7 @@ export interface ModeUse {
 export interface ActivePlan {
   id: string;
   name: string;
-  source: 'SUBSCRIPTION' | 'MANUAL';
+  source: 'SUBSCRIPTION' | 'MANUAL' | 'CAMPAIGN';
   scopeType: ScopeType;
   limits: Limits;
   startsAt: string;
@@ -100,14 +115,40 @@ export interface Customer {
   country: string;
 }
 
-/** Where the browser goes next: PayHere's checkout (a form POST with signed fields) or the labelled test page. */
+/**
+ * Where the browser goes next: PayHere's checkout (a form POST with signed fields), the labelled test page, or (FREE)
+ * straight to the result page.
+ */
 export interface Checkout {
   transactionId: string;
-  provider: 'PAYHERE' | 'TEST';
+  provider: Provider;
   status: PaymentStatus;
   action: string;
   method: 'POST' | 'GET';
   fields: Record<string, string>;
+}
+
+/** contracts/openapi/subscription-service.yaml → Quote. Worked out by the server; checkout works it out again. */
+export interface Quote {
+  currency: Currency;
+  listPriceMinor: number;
+  /** Before the code: the sale price while a sale is on. */
+  priceMinor: number;
+  saleEndsAt: string | null;
+  code: string | null;
+  discountMinor: number;
+  /** 0 = free with the code. */
+  totalMinor: number;
+}
+
+/** Free access open to every student right now (a campaign). */
+export interface Offer {
+  id: string;
+  name: string;
+  scopeType: ScopeType;
+  exams: { examId: string; title: string; slug: string }[];
+  limits: Limits;
+  endsAt: string;
 }
 
 export const billingKeys = {
@@ -115,7 +156,20 @@ export const billingKeys = {
   plans: () => [...billingKeys.all, 'plans'] as const,
   mine: (userId: string) => [...billingKeys.all, 'mine', userId] as const,
   payment: (id: string) => [...billingKeys.all, 'payment', id] as const,
+  offers: () => [...billingKeys.all, 'offers'] as const,
 };
+
+export function useOffers() {
+  return useQuery({
+    queryKey: billingKeys.offers(),
+    queryFn: ({ signal }) => apiFetch<Offer[]>('/plans/offers', { signal }),
+    staleTime: 60_000,
+  });
+}
+
+export function quotePrice(planId: string, currency: Currency, code: string | null): Promise<Quote> {
+  return apiFetch<Quote>('/subscriptions/quote', { method: 'POST', json: { planId, currency, code } });
+}
 
 export function usePlans(filter: { examId?: string | undefined } = {}) {
   return useQuery({
@@ -144,10 +198,17 @@ export function usePayment(id: string | null, pollMs: number | false = false) {
   });
 }
 
-export function startCheckout(planId: string, currency: Currency, idempotencyKey: string, customer: Customer): Promise<Checkout> {
+export function startCheckout(
+  planId: string,
+  currency: Currency,
+  code: string | null,
+  idempotencyKey: string,
+  /** Null when nothing is paid (a code makes it free); PayHere needs it. */
+  customer: Customer | null,
+): Promise<Checkout> {
   return apiFetch<Checkout>('/subscriptions/checkout', {
     method: 'POST',
-    json: { planId, currency, customer },
+    json: { planId, currency, code, customer },
     headers: { 'Idempotency-Key': idempotencyKey },
   });
 }

@@ -4,31 +4,23 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { Trash2 } from 'lucide-react';
-import { Alert, Button, CheckboxField, Dialog, SelectField, Skeleton, TextAreaField, TextField } from '@/components/ui';
-import { useAdminCategories } from '@/features/admin/catalog/api';
+import { Alert, Button, CheckboxField, Dialog, SelectField, TextAreaField, TextField } from '@/components/ui';
 import { billingKeys, monthsLabel } from '@/features/billing/api';
 import { ApiError } from '@/lib/api/problem';
 import {
   billingAdminKeys,
   createPlan,
   deletePlan,
+  fromLocalInput,
   parsePrice,
   planCode,
+  toLocalInput,
   updatePlan,
-  usePlanExams,
   type AdminPlan,
   type PlanInput,
 } from './api';
-
-const LIMIT_ROWS = [
-  { key: 'practice', label: 'Practice' },
-  { key: 'mock', label: 'Mock exams' },
-  { key: 'adaptive', label: 'Adaptive exams' },
-] as const;
-type LimitKey = (typeof LIMIT_ROWS)[number]['key'];
-type Kind = 'UNLIMITED' | 'COUNT' | 'NONE';
-
-const limitSchema = z.object({ kind: z.enum(['UNLIMITED', 'COUNT', 'NONE']), count: z.string() });
+import { LimitFields, ScopeFields } from './ScopeFields';
+import { UNLIMITED_ALL, checkScopeAndLimits, fromLimit, limitsSchema, toLimit } from './scope';
 
 const price = z
   .string()
@@ -45,39 +37,47 @@ const schema = z
     durationMonths: z.enum(['1', '3', '6', '12']),
     priceLkr: price,
     priceUsd: price,
-    limits: z.object({ practice: limitSchema, mock: limitSchema, adaptive: limitSchema }),
+    limits: limitsSchema,
     active: z.boolean(),
     displayOrder: z.number({ error: 'Enter a number.' }).int('Use a whole number.').min(0).max(1000),
+    saleOn: z.boolean(),
+    salePriceLkr: price,
+    salePriceUsd: price,
+    saleStartsAt: z.string(),
+    saleEndsAt: z.string(),
   })
   .superRefine((v, ctx) => {
     if (v.priceLkr.trim() === '' && v.priceUsd.trim() === '') {
       ctx.addIssue({ code: 'custom', path: ['priceLkr'], message: 'Set an LKR price, a USD price, or both.' });
     }
-    if (v.scopeType === 'EXAM' && v.examIds.length !== 1) {
-      ctx.addIssue({ code: 'custom', path: ['examIds'], message: 'Choose the exam.' });
+    checkScopeAndLimits(v, ctx);
+    if (!v.saleOn) return;
+    if (v.salePriceLkr.trim() === '' && v.salePriceUsd.trim() === '') {
+      ctx.addIssue({ code: 'custom', path: ['salePriceLkr'], message: 'Set a sale price in at least one currency.' });
     }
-    if (v.scopeType === 'BUNDLE' && v.examIds.length < 2) {
-      ctx.addIssue({ code: 'custom', path: ['examIds'], message: 'Choose at least 2 exams for a bundle.' });
-    }
-    for (const { key } of LIMIT_ROWS) {
-      const l = v.limits[key];
-      if (l.kind === 'COUNT' && !/^\d{1,5}$/.test(l.count.trim())) {
-        ctx.addIssue({ code: 'custom', path: ['limits', key, 'count'], message: 'Enter a number of attempts.' });
-      } else if (l.kind === 'COUNT' && (Number(l.count) < 1 || Number(l.count) > 10000)) {
-        ctx.addIssue({ code: 'custom', path: ['limits', key, 'count'], message: 'Use 1 to 10,000.' });
+    for (const [sale, regular, field] of [
+      [v.salePriceLkr, v.priceLkr, 'salePriceLkr'],
+      [v.salePriceUsd, v.priceUsd, 'salePriceUsd'],
+    ] as const) {
+      if (sale.trim() === '') continue;
+      if (regular.trim() === '') {
+        ctx.addIssue({ code: 'custom', path: [field], message: 'The plan isn’t sold in this currency.' });
+      } else if ((parsePrice(sale) ?? 0) >= (parsePrice(regular) ?? 0)) {
+        ctx.addIssue({ code: 'custom', path: [field], message: 'Must be lower than the regular price.' });
       }
     }
-    if (LIMIT_ROWS.every(({ key }) => v.limits[key].kind === 'NONE')) {
-      ctx.addIssue({ code: 'custom', path: ['limits', 'practice', 'kind'], message: 'Include at least one exam type.' });
+    const starts = fromLocalInput(v.saleStartsAt);
+    const ends = fromLocalInput(v.saleEndsAt);
+    if (!starts) ctx.addIssue({ code: 'custom', path: ['saleStartsAt'], message: 'Choose when the sale starts.' });
+    if (!ends) ctx.addIssue({ code: 'custom', path: ['saleEndsAt'], message: 'Choose when the sale ends.' });
+    else if (starts && Date.parse(ends) <= Date.parse(starts)) {
+      ctx.addIssue({ code: 'custom', path: ['saleEndsAt'], message: 'Must be after the start.' });
     }
   });
 type FormValues = z.infer<typeof schema>;
 
-const toForm = (n: number | null): { kind: Kind; count: string } =>
-  n === null ? { kind: 'UNLIMITED', count: '' } : n === 0 ? { kind: 'NONE', count: '' } : { kind: 'COUNT', count: String(n) };
-const fromForm = (l: { kind: Kind; count: string }): number | null =>
-  l.kind === 'UNLIMITED' ? null : l.kind === 'NONE' ? 0 : Number(l.count);
 const priceText = (minor: number | null) => (minor === null ? '' : (minor / 100).toFixed(2));
+const orNull = (text: string) => (text.trim() === '' ? null : parsePrice(text));
 
 const errorText = (error: unknown) =>
   error instanceof ApiError
@@ -92,8 +92,6 @@ const errorText = (error: unknown) =>
  */
 export function PlanDialog({ plan, onClose }: { plan: AdminPlan | null; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const exams = usePlanExams();
-  const categories = useAdminCategories();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -108,12 +106,17 @@ export function PlanDialog({ plan, onClose }: { plan: AdminPlan | null; onClose:
           priceLkr: priceText(plan.priceLkrMinor),
           priceUsd: priceText(plan.priceUsdMinor),
           limits: {
-            practice: toForm(plan.limits.practice),
-            mock: toForm(plan.limits.mock),
-            adaptive: toForm(plan.limits.adaptive),
+            practice: toLimit(plan.limits.practice),
+            mock: toLimit(plan.limits.mock),
+            adaptive: toLimit(plan.limits.adaptive),
           },
           active: plan.active,
           displayOrder: plan.displayOrder,
+          saleOn: plan.sale.endsAt !== null,
+          salePriceLkr: priceText(plan.sale.priceLkrMinor),
+          salePriceUsd: priceText(plan.sale.priceUsdMinor),
+          saleStartsAt: toLocalInput(plan.sale.startsAt),
+          saleEndsAt: toLocalInput(plan.sale.endsAt),
         }
       : {
           name: '',
@@ -124,13 +127,14 @@ export function PlanDialog({ plan, onClose }: { plan: AdminPlan | null; onClose:
           durationMonths: '1',
           priceLkr: '',
           priceUsd: '',
-          limits: {
-            practice: { kind: 'UNLIMITED', count: '' },
-            mock: { kind: 'UNLIMITED', count: '' },
-            adaptive: { kind: 'UNLIMITED', count: '' },
-          },
+          limits: UNLIMITED_ALL,
           active: true,
           displayOrder: 0,
+          saleOn: false,
+          salePriceLkr: '',
+          salePriceUsd: '',
+          saleStartsAt: '',
+          saleEndsAt: '',
         },
   });
   const done = () => {
@@ -147,13 +151,17 @@ export function PlanDialog({ plan, onClose }: { plan: AdminPlan | null; onClose:
         categoryId: v.scopeType === 'ALL' || v.categoryId === '' ? null : v.categoryId,
         examIds: v.scopeType === 'ALL' ? [] : v.examIds,
         durationMonths: Number(v.durationMonths),
-        priceLkrMinor: v.priceLkr.trim() === '' ? null : parsePrice(v.priceLkr),
-        priceUsdMinor: v.priceUsd.trim() === '' ? null : parsePrice(v.priceUsd),
-        practiceLimit: fromForm(v.limits.practice),
-        mockLimit: fromForm(v.limits.mock),
-        adaptiveLimit: fromForm(v.limits.adaptive),
+        priceLkrMinor: orNull(v.priceLkr),
+        priceUsdMinor: orNull(v.priceUsd),
+        practiceLimit: fromLimit(v.limits.practice),
+        mockLimit: fromLimit(v.limits.mock),
+        adaptiveLimit: fromLimit(v.limits.adaptive),
         active: v.active,
         displayOrder: v.displayOrder,
+        salePriceLkrMinor: v.saleOn ? orNull(v.salePriceLkr) : null,
+        salePriceUsdMinor: v.saleOn ? orNull(v.salePriceUsd) : null,
+        saleStartsAt: v.saleOn ? fromLocalInput(v.saleStartsAt) : null,
+        saleEndsAt: v.saleOn ? fromLocalInput(v.saleEndsAt) : null,
       };
       return plan ? updatePlan(plan, input) : createPlan({ ...input, code: planCode(input.name) });
     },
@@ -165,13 +173,10 @@ export function PlanDialog({ plan, onClose }: { plan: AdminPlan | null; onClose:
   });
 
   const e = form.formState.errors;
-  const [scopeType, categoryId, examIds] = useWatch({
+  const [scopeType, categoryId, examIds, limits, saleOn] = useWatch({
     control: form.control,
-    name: ['scopeType', 'categoryId', 'examIds'],
+    name: ['scopeType', 'categoryId', 'examIds', 'limits', 'saleOn'],
   });
-  const visibleExams = (exams.data ?? []).filter((x) => categoryId === '' || x.categoryId === categoryId);
-  const toggleExam = (id: string, on: boolean) =>
-    form.setValue('examIds', on ? [...new Set([...examIds, id])] : examIds.filter((x) => x !== id), { shouldValidate: true });
 
   return (
     <Dialog
@@ -204,106 +209,15 @@ export function PlanDialog({ plan, onClose }: { plan: AdminPlan | null; onClose:
       <form id="plan-form" noValidate onSubmit={form.handleSubmit((v) => save.mutate(v))} className="flex flex-col gap-5">
         <TextField label="Name" placeholder="Science – 1 month" error={e.name?.message} {...form.register('name')} />
 
-        <fieldset className="flex flex-col gap-3">
-          <legend className="mb-1 text-sm font-semibold">What it covers</legend>
-          <div className="flex flex-wrap gap-x-5 gap-y-2" role="radiogroup">
-            {(
-              [
-                ['EXAM', 'One exam'],
-                ['BUNDLE', 'A bundle of exams'],
-                ['ALL', 'Every exam'],
-              ] as const
-            ).map(([value, label]) => (
-              <label key={value} className="flex items-center gap-2 text-[15px]">
-                <input
-                  type="radio"
-                  value={value}
-                  className="size-4 accent-[var(--color-primary)]"
-                  {...form.register('scopeType')}
-                />
-                {label}
-              </label>
-            ))}
-          </div>
-          {scopeType !== 'ALL' && (
-            <>
-              {/* Controlled: the options load after the form, so a registered select would show the first option. */}
-              <SelectField
-                label="Category"
-                value={categoryId}
-                onChange={(ev) => form.setValue('categoryId', ev.target.value, { shouldDirty: true })}
-              >
-                <option value="">All categories</option>
-                {(categories.data ?? []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </SelectField>
-              {exams.isPending ? (
-                <Skeleton className="h-24 w-full" />
-              ) : scopeType === 'EXAM' ? (
-                <SelectField
-                  label="Exam"
-                  value={examIds[0] ?? ''}
-                  onChange={(ev) => form.setValue('examIds', ev.target.value ? [ev.target.value] : [], { shouldValidate: true })}
-                >
-                  <option value="">Choose an exam</option>
-                  {visibleExams.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.title}
-                      {x.status === 'DRAFT' ? ' (draft)' : ''}
-                    </option>
-                  ))}
-                </SelectField>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-sm font-semibold">
-                      Exams in the bundle <span className="font-normal text-muted">({examIds.length} chosen)</span>
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        form.setValue('examIds', [...new Set([...examIds, ...visibleExams.map((x) => x.id)])], {
-                          shouldValidate: true,
-                        })
-                      }
-                    >
-                      Choose all shown
-                    </Button>
-                  </div>
-                  <ul className="grid max-h-56 gap-1 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-2">
-                    {visibleExams.map((x) => (
-                      <li key={x.id}>
-                        <label className="flex items-center gap-2 rounded px-2 py-1.5 text-[14.5px] hover:bg-surface-2">
-                          <input
-                            type="checkbox"
-                            className="size-4 accent-[var(--color-primary)]"
-                            checked={examIds.includes(x.id)}
-                            onChange={(ev) => toggleExam(x.id, ev.target.checked)}
-                          />
-                          {x.title}
-                          {x.status === 'DRAFT' && <span className="text-muted">(draft)</span>}
-                        </label>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-[13px] text-muted">
-                    The bundle is a fixed list: exams added to the category later aren’t included for students who already bought
-                    it.
-                  </p>
-                </div>
-              )}
-              {e.examIds?.message && (
-                <p role="alert" className="text-[13.5px] font-semibold text-danger-ink">
-                  {e.examIds.message}
-                </p>
-              )}
-            </>
-          )}
-        </fieldset>
+        <ScopeFields
+          scopeType={scopeType}
+          categoryId={categoryId}
+          examIds={examIds}
+          error={e.examIds?.message}
+          onScopeType={(v) => form.setValue('scopeType', v, { shouldDirty: true })}
+          onCategory={(v) => form.setValue('categoryId', v, { shouldDirty: true })}
+          onExams={(v) => form.setValue('examIds', v, { shouldDirty: true, shouldValidate: form.formState.isSubmitted })}
+        />
 
         <div className="grid gap-4 sm:grid-cols-3">
           <SelectField label="Length" {...form.register('durationMonths')}>
@@ -331,17 +245,55 @@ export function PlanDialog({ plan, onClose }: { plan: AdminPlan | null; onClose:
           />
         </div>
 
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-semibold">
-            Attempts {scopeType === 'BUNDLE' ? 'per subject ' : scopeType === 'ALL' ? 'per exam ' : ''}for the length of the plan
-          </legend>
-          {LIMIT_ROWS.map(({ key, label }) => (
-            <LimitRow key={key} limitKey={key} label={label} form={form} />
-          ))}
-          {e.limits?.practice?.kind?.message && (
-            <p role="alert" className="text-[13.5px] font-semibold text-danger-ink">
-              {e.limits.practice.kind.message}
-            </p>
+        <LimitFields
+          legend={`Attempts ${scopeType === 'BUNDLE' ? 'per subject ' : scopeType === 'ALL' ? 'per exam ' : ''}for the length of the plan`}
+          values={limits}
+          errors={{
+            kind: e.limits?.practice?.kind?.message,
+            counts: {
+              practice: e.limits?.practice?.count?.message,
+              mock: e.limits?.mock?.count?.message,
+              adaptive: e.limits?.adaptive?.count?.message,
+            },
+          }}
+          onChange={(key, value) =>
+            form.setValue(`limits.${key}`, value, { shouldDirty: true, shouldValidate: form.formState.isSubmitted })
+          }
+        />
+
+        <fieldset className="flex flex-col gap-3 rounded-md border border-border p-4">
+          <legend className="px-1 text-sm font-semibold">Sale price</legend>
+          <CheckboxField
+            label="Sell at a lower price for a while"
+            help="Pricing shows the regular price crossed out and when the sale ends."
+            {...form.register('saleOn')}
+          />
+          {saleOn && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextField
+                label="Sale price in LKR"
+                inputMode="decimal"
+                placeholder="2500.00"
+                help="Leave empty for no LKR sale."
+                error={e.salePriceLkr?.message}
+                {...form.register('salePriceLkr')}
+              />
+              <TextField
+                label="Sale price in USD"
+                inputMode="decimal"
+                placeholder="12.00"
+                help="Leave empty for no USD sale."
+                error={e.salePriceUsd?.message}
+                {...form.register('salePriceUsd')}
+              />
+              <TextField
+                label="Sale starts"
+                type="datetime-local"
+                error={e.saleStartsAt?.message}
+                {...form.register('saleStartsAt')}
+              />
+              <TextField label="Sale ends" type="datetime-local" error={e.saleEndsAt?.message} {...form.register('saleEndsAt')} />
+            </div>
           )}
         </fieldset>
 
@@ -370,38 +322,5 @@ export function PlanDialog({ plan, onClose }: { plan: AdminPlan | null; onClose:
         )}
       </form>
     </Dialog>
-  );
-}
-
-function LimitRow({
-  limitKey,
-  label,
-  form,
-}: {
-  limitKey: LimitKey;
-  label: string;
-  form: ReturnType<typeof useForm<FormValues>>;
-}) {
-  const kind = useWatch({ control: form.control, name: `limits.${limitKey}.kind` });
-  const error = form.formState.errors.limits?.[limitKey]?.count?.message;
-  return (
-    <div className="grid items-start gap-3 sm:grid-cols-[140px_1fr_1fr]">
-      <span className="pt-3 text-[15px] font-semibold">{label}</span>
-      <SelectField label={`${label}: access`} hideLabel {...form.register(`limits.${limitKey}.kind`)}>
-        <option value="UNLIMITED">Unlimited</option>
-        <option value="COUNT">Number of attempts</option>
-        <option value="NONE">Not included</option>
-      </SelectField>
-      {kind === 'COUNT' && (
-        <TextField
-          label={`${label}: number of attempts`}
-          hideLabel
-          inputMode="numeric"
-          placeholder="10"
-          error={error}
-          {...form.register(`limits.${limitKey}.count`)}
-        />
-      )}
-    </div>
   );
 }

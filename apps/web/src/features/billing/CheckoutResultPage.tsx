@@ -68,28 +68,21 @@ export function CheckoutCancelPage() {
 }
 
 function Result({ payment, waitedTooLong }: { payment: Payment; waitedTooLong: boolean }) {
-  const [openedAt] = useState(() => Date.now());
   const amount = formatPrice(payment.amountMinor, payment.currency);
   if (payment.status === 'SUCCEEDED') {
     return (
       <Card className="flex flex-col items-center gap-4 p-8 text-center">
         <CircleCheck aria-hidden="true" className="size-12 text-success" />
-        <h1 className="text-2xl font-extrabold tracking-tight">You have Premium</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">Your plan has started</h1>
         <p role="status" className="text-ink-2">
-          Payment of {amount} received for {payment.planName}.
-          {payment.premiumStartsAt && payment.premiumEndsAt && (
-            <>
-              {' '}
-              {Date.parse(payment.premiumStartsAt) > openedAt + 60_000
-                ? `It starts on ${longDate.format(new Date(payment.premiumStartsAt))}, when your current Premium ends, and runs until`
-                : 'Every exam is unlimited until'}{' '}
-              {longDate.format(new Date(payment.premiumEndsAt))}.
-            </>
-          )}
+          {payment.provider === 'FREE'
+            ? `${payment.planName} is free with your discount code.`
+            : `Payment of ${amount} received for ${payment.planName}.`}
+          {payment.premiumEndsAt && ` It runs until ${longDate.format(new Date(payment.premiumEndsAt))}.`}
         </p>
         <Actions
           primary={{ to: '/dashboard', label: 'Go to your dashboard' }}
-          secondary={{ to: '/exams', label: 'Browse exams' }}
+          secondary={{ to: '/account', label: 'See what your plan includes' }}
         />
       </Card>
     );

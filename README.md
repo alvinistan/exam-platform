@@ -180,6 +180,11 @@ A plan covers one exam, a bundle of exams, or everything; lasts 1, 3, 6 or 12 mo
 and sets Practice, Mock and Adaptive attempts (unlimited, a number per exam, or not included). Changes apply to new
 payments only.
 
+**Promotions** (Phase 11C): a plan can have a sale price between two dates (edit the plan). **Administration →
+Promotions** has discount codes (percentage or fixed amount, limits per student and overall; a code that covers the
+whole price starts the plan without payment) and free access campaigns (for every student between two dates, or for
+chosen students for 1–12 months).
+
 - **Out of the box** `PAYMENT_PROVIDER=TEST`: choosing a plan opens a clearly labelled test page where no money moves.
   It is refused when the `prod` profile is active.
 - **PayHere sandbox**: create a sandbox account at sandbox.payhere.lk, add your domain under Settings → Domains &

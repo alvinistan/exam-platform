@@ -66,7 +66,7 @@ paths:
                   entitlement:
                     type: [object, 'null']
                     properties:
-                      source: { type: string, enum: [SUBSCRIPTION, MANUAL] }
+                      source: { type: string, enum: [SUBSCRIPTION, MANUAL, CAMPAIGN] }
                       endsAt: { type: string, format: date-time }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
   /api/plans:
@@ -92,6 +92,45 @@ paths:
                   plans: { type: array, items: { $ref: '#/components/schemas/PublicPlan' } }
         '429':
           $ref: './common.yaml#/components/responses/TooManyRequests'
+  /api/plans/offers:
+    get:
+      tags: [Plans]
+      operationId: listOffers
+      summary: Free access open to every student right now
+      security: [{}, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Campaigns open to everyone, ending soonest first. Campaigns for chosen students are not listed.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Offer' } }
+        '429':
+          $ref: './common.yaml#/components/responses/TooManyRequests'
+  /api/subscriptions/quote:
+    post:
+      tags: [Plans]
+      operationId: quotePrice
+      summary: The price a student would pay now
+      description: >-
+        The sale price while a sale is on, less the discount code. For showing only: checkout works the price out
+        again. A code that can't be used is a 400 with the reason on the code field. Rate limited at the gateway.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planId]
+              properties:
+                planId: { type: string, format: uuid }
+                currency: { type: string, enum: [LKR, USD], default: LKR }
+                code: { type: [string, 'null'], maxLength: 40, description: 'A discount code; case does not matter.' }
+      responses:
+        '200': { description: The price., content: { application/json: { schema: { $ref: '#/components/schemas/Quote' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '429': { $ref: './common.yaml#/components/responses/TooManyRequests' }
   /api/subscriptions/me:
     get:
       tags: [Plans]
@@ -118,9 +157,11 @@ paths:
       operationId: startCheckout
       summary: Start paying for a plan
       description: >-
-        Creates a PENDING payment (plan name, length and price copied from the plan) and returns where the browser goes
-        next. For PayHere that is a form POST to PayHere's checkout with signed fields; for TEST it is the labelled test
-        page. Nothing is activated here. The same Idempotency-Key returns the same payment.
+        Creates a PENDING payment (plan name, length and price copied from the plan; the sale price while a sale is on,
+        less the discount code) and returns where the browser goes next. For PayHere that is a form POST to PayHere's
+        checkout with signed fields; for TEST it is the labelled test page. When the code makes the plan free, the
+        payment is FREE and already SUCCEEDED, and the browser goes to the return page. The same Idempotency-Key returns
+        the same payment.
       parameters:
         - $ref: './common.yaml#/components/parameters/IdempotencyKey'
       requestBody:
@@ -129,13 +170,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [planId, customer]
+              required: [planId]
               properties:
                 planId: { type: string, format: uuid }
                 currency: { type: string, enum: [LKR, USD], default: LKR, description: The plan must have a price in this currency. }
+                code: { type: [string, 'null'], maxLength: 40, description: 'A discount code; a code that cannot be used is a 400 on the code field.' }
                 customer:
                   type: object
-                  description: Buyer details PayHere requires on its form. Passed through, not stored.
+                  description: "Buyer details PayHere requires on its form; required for PayHere (400 on the customer field otherwise), not needed when the plan is free with a code. Passed through, not stored."
                   required: [firstName, lastName, email, phone, address, city, country]
                   properties:
                     firstName: { type: string, maxLength: 50 }
@@ -155,7 +197,7 @@ paths:
                 required: [transactionId, provider, status, action, method, fields]
                 properties:
                   transactionId: { type: string, format: uuid }
-                  provider: { type: string, enum: [PAYHERE, TEST] }
+                  provider: { type: string, enum: [PAYHERE, TEST, FREE] }
                   status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
                   action: { type: string, format: uri }
                   method: { type: string, enum: [POST, GET] }
@@ -309,6 +351,109 @@ paths:
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
         '409': { description: Someone else saved first (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/discount-codes:
+    get:
+      tags: [Admin billing]
+      operationId: listDiscountCodes
+      summary: Discount codes, newest first, with how often each was used
+      responses:
+        '200': { description: Codes., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/DiscountCode' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+    post:
+      tags: [Admin billing]
+      operationId: createDiscountCode
+      summary: Create a discount code (audited)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiscountCodeInput' }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/DiscountCode' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/billing/discount-codes/{codeId}:
+    put:
+      tags: [Admin billing]
+      operationId: updateDiscountCode
+      summary: Change a discount code (audited); the code itself can't change
+      parameters:
+        - { name: codeId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, description: The code's version., schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiscountCodeInput' }
+      responses:
+        '200': { description: Saved., content: { application/json: { schema: { $ref: '#/components/schemas/DiscountCode' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: Someone else saved first (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/campaigns:
+    get:
+      tags: [Admin billing]
+      operationId: listCampaigns
+      summary: Free access campaigns, newest first
+      responses:
+        '200': { description: Campaigns., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Campaign' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+    post:
+      tags: [Admin billing]
+      operationId: createCampaign
+      summary: Start a free access campaign (audited)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CampaignInput' }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/Campaign' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/billing/campaigns/{campaignId}/students:
+    post:
+      tags: [Admin billing]
+      operationId: addCampaignStudents
+      summary: Add students to a campaign for chosen students (audited)
+      description: Each student gets the campaign's length from today. Students who already have it are skipped.
+      parameters:
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentIds]
+              properties:
+                studentIds: { type: array, minItems: 1, maxItems: 500, items: { type: string, format: uuid } }
+      responses:
+        '200': { description: The campaign., content: { application/json: { schema: { $ref: '#/components/schemas/Campaign' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: 'The campaign has ended, or is open to every student (CONFLICT).', content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/campaigns/{campaignId}/end:
+    post:
+      tags: [Admin billing]
+      operationId: endCampaign
+      summary: End a campaign now (audited); the access it gave stops
+      parameters:
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: The campaign., content: { application/json: { schema: { $ref: '#/components/schemas/Campaign' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: Already ended (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
   /api/admin/billing/payments:
     get:
       tags: [Admin billing]
@@ -450,6 +595,9 @@ components:
         priceLkrMinor: { type: [integer, 'null'], description: 'LKR price in cents (300000 = LKR 3,000.00); null = not sold in LKR.' }
         priceUsdMinor: { type: [integer, 'null'], description: 'USD price in cents; null = not sold in USD.' }
         limits: { $ref: '#/components/schemas/Limits' }
+        salePriceLkrMinor: { type: [integer, 'null'], description: 'The LKR price while a sale is on now; null otherwise.' }
+        salePriceUsdMinor: { type: [integer, 'null'], description: 'The USD price while a sale is on now; null otherwise.' }
+        saleEndsAt: { type: [string, 'null'], format: date-time, description: When the sale price ends. }
     Plan:
       type: object
       required: [id, code, name, scopeType, examIds, durationMonths, limits, active, displayOrder, version]
@@ -469,6 +617,15 @@ components:
         displayOrder: { type: integer }
         version: { type: integer, description: Send as If-Match when saving. }
         updatedAt: { type: string, format: date-time }
+        sale: { $ref: '#/components/schemas/Sale' }
+    Sale:
+      type: object
+      description: A lower price between two dates; all null when there is no sale.
+      properties:
+        priceLkrMinor: { type: [integer, 'null'] }
+        priceUsdMinor: { type: [integer, 'null'] }
+        startsAt: { type: [string, 'null'], format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
     PlanInput:
       type: object
       required: [name, scopeType, durationMonths]
@@ -488,13 +645,17 @@ components:
         adaptiveLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
         active: { type: boolean }
         displayOrder: { type: integer, minimum: 0, maximum: 1000 }
+        salePriceLkrMinor: { type: [integer, 'null'], minimum: 100, description: 'Lower than priceLkrMinor; needs saleStartsAt and saleEndsAt.' }
+        salePriceUsdMinor: { type: [integer, 'null'], minimum: 100, description: Lower than priceUsdMinor. }
+        saleStartsAt: { type: [string, 'null'], format: date-time }
+        saleEndsAt: { type: [string, 'null'], format: date-time }
     ActivePlan:
       type: object
       required: [id, name, source, scopeType, limits, startsAt, endsAt, exams]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        source: { type: string, enum: [SUBSCRIPTION, MANUAL] }
+        source: { type: string, enum: [SUBSCRIPTION, MANUAL, CAMPAIGN] }
         scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
         limits: { $ref: '#/components/schemas/Limits' }
         startsAt: { type: string, format: date-time }
@@ -537,12 +698,13 @@ components:
         durationMonths: { type: integer }
         amountMinor: { type: integer }
         currency: { type: string }
-        provider: { type: string, enum: [PAYHERE, TEST] }
+        provider: { type: string, enum: [PAYHERE, TEST, FREE] }
         status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
         failureReason: { type: [string, 'null'], enum: [CHARGEDBACK, NOT_COMPLETED, null] }
         createdAt: { type: string, format: date-time }
         premiumStartsAt: { type: [string, 'null'], format: date-time }
         premiumEndsAt: { type: [string, 'null'], format: date-time }
+        discountMinor: { type: integer, description: Taken off by a discount code. }
     AdminPayment:
       type: object
       required: [id, studentId, planId, planName, amountMinor, currency, provider, status, createdAt]
@@ -552,7 +714,7 @@ components:
         planId: { type: string, format: uuid }
         planName: { type: string }
         durationMonths: { type: integer }
-        provider: { type: string, enum: [PAYHERE, TEST] }
+        provider: { type: string, enum: [PAYHERE, TEST, FREE] }
         providerRef: { type: [string, 'null'] }
         idempotencyKey: { type: string }
         amountMinor: { type: integer }
@@ -561,6 +723,9 @@ components:
         failureReason: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+        listPriceMinor: { type: [integer, 'null'], description: "The plan's regular price at checkout." }
+        discountCodeId: { type: [string, 'null'], format: uuid }
+        discountMinor: { type: integer }
     ExamFreeAttempts:
       type: object
       required: [examId, title, slug, modes, freeAttempts]
@@ -579,7 +744,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         studentId: { type: string, format: uuid }
-        source: { type: string, enum: [SUBSCRIPTION, MANUAL] }
+        source: { type: string, enum: [SUBSCRIPTION, MANUAL, CAMPAIGN] }
         state: { type: string, enum: [ACTIVE, SCHEDULED, EXPIRED, REVOKED] }
         startsAt: { type: string, format: date-time }
         endsAt: { type: string, format: date-time }
@@ -588,3 +753,104 @@ components:
         revokedAt: { type: [string, 'null'], format: date-time }
         revokedReason: { type: [string, 'null'] }
         createdAt: { type: string, format: date-time }
+    Quote:
+      type: object
+      required: [currency, listPriceMinor, priceMinor, discountMinor, totalMinor]
+      properties:
+        currency: { type: string, enum: [LKR, USD] }
+        listPriceMinor: { type: integer, description: "The plan's regular price." }
+        priceMinor: { type: integer, description: The price before the code (the sale price while a sale is on). }
+        saleEndsAt: { type: [string, 'null'], format: date-time }
+        code: { type: [string, 'null'], description: The code as stored (capitals). }
+        codeId: { type: [string, 'null'], format: uuid }
+        discountMinor: { type: integer }
+        totalMinor: { type: integer, description: What the student pays; 0 = free with the code. }
+    DiscountCode:
+      type: object
+      required: [id, code, allPlans, planIds, startsAt, endsAt, maxUsesPerStudent, active, version, uses]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        description: { type: string }
+        percentOff: { type: [integer, 'null'] }
+        amountOffLkrMinor: { type: [integer, 'null'] }
+        amountOffUsdMinor: { type: [integer, 'null'] }
+        allPlans: { type: boolean }
+        planIds: { type: array, items: { type: string, format: uuid } }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        maxUses: { type: [integer, 'null'], description: null = no overall limit. }
+        maxUsesPerStudent: { type: integer }
+        active: { type: boolean }
+        version: { type: integer, description: Send as If-Match when saving. }
+        uses: { type: integer, description: Payments made with it that are pending or succeeded. }
+    DiscountCodeInput:
+      type: object
+      required: [endsAt]
+      description: 'Either percentOff, or an amount in LKR and/or USD.'
+      properties:
+        code: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{2,31}$', description: "Required when creating; stored in capitals; can't change." }
+        description: { type: string, maxLength: 200 }
+        percentOff: { type: [integer, 'null'], minimum: 1, maximum: 100 }
+        amountOffLkrMinor: { type: [integer, 'null'], minimum: 1 }
+        amountOffUsdMinor: { type: [integer, 'null'], minimum: 1 }
+        allPlans: { type: boolean }
+        planIds: { type: array, maxItems: 100, items: { type: string, format: uuid }, description: Required unless allPlans. }
+        startsAt: { type: [string, 'null'], format: date-time, description: Defaults to now. }
+        endsAt: { type: string, format: date-time }
+        maxUses: { type: [integer, 'null'], minimum: 1 }
+        maxUsesPerStudent: { type: [integer, 'null'], minimum: 1, maximum: 100, default: 1 }
+        active: { type: boolean }
+    Campaign:
+      type: object
+      required: [id, name, scopeType, examIds, limits, audience, startsAt, students]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        categoryId: { type: [string, 'null'], format: uuid }
+        examIds: { type: array, items: { type: string, format: uuid } }
+        limits: { $ref: '#/components/schemas/Limits' }
+        audience: { type: string, enum: [ALL, SELECTED] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time, description: For ALL. }
+        durationMonths: { type: [integer, 'null'], description: 'For SELECTED: how long each student has it.' }
+        endedAt: { type: [string, 'null'], format: date-time, description: Set when an administrator ended it early. }
+        createdBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        students: { type: integer, description: 'Students who have it (for ALL, those who have used it).' }
+    CampaignInput:
+      type: object
+      required: [name, scopeType, audience]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 80 }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        categoryId: { type: [string, 'null'], format: uuid }
+        examIds: { type: array, items: { type: string, format: uuid } }
+        practiceLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000, description: 'null = unlimited, 0 = not included.' }
+        mockLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+        adaptiveLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+        audience: { type: string, enum: [ALL, SELECTED], description: 'ALL: every student between startsAt and endsAt (at most 2 years). SELECTED: studentIds, for durationMonths from today.' }
+        startsAt: { type: [string, 'null'], format: date-time, description: 'ALL only; defaults to now.' }
+        endsAt: { type: [string, 'null'], format: date-time }
+        durationMonths: { type: [integer, 'null'], enum: [1, 3, 6, 12, null] }
+        studentIds: { type: array, maxItems: 500, items: { type: string, format: uuid } }
+    Offer:
+      type: object
+      required: [id, name, scopeType, exams, limits, endsAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        exams:
+          type: array
+          description: The published exams included (empty for ALL, which includes every exam).
+          items:
+            type: object
+            required: [examId, title, slug]
+            properties:
+              examId: { type: string, format: uuid }
+              title: { type: string }
+              slug: { type: string }
+        limits: { $ref: '#/components/schemas/Limits' }
+        endsAt: { type: string, format: date-time }

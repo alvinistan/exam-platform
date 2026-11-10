@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router';
-import { CreditCard, FileQuestion, FileText, FolderTree, KeyRound, Users } from 'lucide-react';
+import { CreditCard, FileQuestion, FileText, FolderTree, Gift, KeyRound, Users } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { PageLoading } from './PageLoading';
 
@@ -33,6 +33,9 @@ export function AdminLayout() {
           </NavLink>
           <NavLink to="/admin/plans" className={linkClass}>
             <CreditCard aria-hidden="true" className="size-4" /> Plans &amp; payments
+          </NavLink>
+          <NavLink to="/admin/promotions" className={linkClass}>
+            <Gift aria-hidden="true" className="size-4" /> Promotions
           </NavLink>
           <NavLink to="/admin/users" className={linkClass}>
             <Users aria-hidden="true" className="size-4" /> Users

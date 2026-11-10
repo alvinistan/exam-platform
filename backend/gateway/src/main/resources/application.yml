@@ -56,6 +56,13 @@ gateway:
       key: USER
       capacity: 5
       refill-per-minute: 5
+    # Trying discount codes: enough for typos, too slow to guess codes.
+    - name: price-quote
+      paths: [/api/subscriptions/quote]
+      methods: [POST]
+      key: USER
+      capacity: 10
+      refill-per-minute: 10
     - name: attempt-start
       paths: [/api/attempts]
       methods: [POST]

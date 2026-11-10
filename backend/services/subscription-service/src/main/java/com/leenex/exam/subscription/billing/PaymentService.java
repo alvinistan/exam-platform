@@ -6,7 +6,9 @@ import com.leenex.exam.platform.web.UuidV7;
 import com.leenex.exam.subscription.billing.Notification.Outcome;
 import com.leenex.exam.subscription.billing.Payments.Transaction;
 import com.leenex.exam.subscription.config.SubscriptionProperties;
+import com.leenex.exam.subscription.promo.Pricing;
 import com.leenex.exam.subscription.support.AuditLog;
+import com.leenex.exam.subscription.support.Requests;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -40,15 +42,17 @@ public class PaymentService {
 
     private final Plans plans;
     private final Payments payments;
+    private final Pricing pricing;
     private final SubscriptionProperties.Payments settings;
     private final AuditLog audit;
     private final JsonMapper json;
     private final Clock clock;
 
-    public PaymentService(Plans plans, Payments payments, SubscriptionProperties properties, AuditLog audit,
-                          JsonMapper json, Clock clock) {
+    public PaymentService(Plans plans, Payments payments, Pricing pricing, SubscriptionProperties properties,
+                          AuditLog audit, JsonMapper json, Clock clock) {
         this.plans = plans;
         this.payments = payments;
+        this.pricing = pricing;
         this.settings = properties.payments();
         this.audit = audit;
         this.json = json;
@@ -61,7 +65,7 @@ public class PaymentService {
 
     // --- checkout -----------------------------------------------------------------------------------------------------
 
-    /** Buyer details PayHere requires on its form; passed through, not stored. */
+    /** Buyer details PayHere requires on its form; passed through, not stored. Null when PayHere isn't used. */
     public record Customer(String firstName, String lastName, String email, String phone, String address, String city,
                            String country) {
     }
@@ -73,30 +77,60 @@ public class PaymentService {
                            Map<String, String> fields) {
     }
 
+    /**
+     * Starts paying for a plan, at today's price (the sale price while a sale is on) less the discount code, if any.
+     * When the code makes it free, the plan starts straight away without a payment provider.
+     */
     @Transactional
-    public Checkout checkout(UUID studentId, UUID planId, String currency, String idempotencyKey, Customer customer) {
+    public Checkout checkout(UUID studentId, UUID planId, String currency, String code, String idempotencyKey,
+                             Customer customer) {
         Transaction tx = payments.byKey(studentId, idempotencyKey).orElse(null);
         if (tx == null) {
             Plans.Plan plan = plans.find(planId).filter(Plans.Plan::active)
                     .orElseThrow(() -> new ApiException(ProblemCode.NOT_FOUND, "This plan isn't available."));
-            Long price = plan.priceMinor(currency);
-            if (price == null) {
-                throw new ApiException(ProblemCode.VALIDATION_FAILED, "This plan can't be paid in " + currency + ".");
+            Pricing.Quote price = pricing.quote(studentId, plan, currency, code, clock.instant(), true);
+            String provider = price.totalMinor() == 0 ? "FREE" : provider();
+            if ("PAYHERE".equals(provider) && customer == null) {
+                throw Requests.invalid("customer", "PayHere needs your name, email, phone and address");
             }
             UUID id = UuidV7.generate();
-            if (!payments.insertTransaction(id, studentId, plan, provider(), idempotencyKey, price, currency,
+            if (!payments.insertTransaction(id, studentId, plan, provider, idempotencyKey, price,
                     json.writeValueAsString(Snapshot.of(plan)))) {
                 // The same request arrived twice at once; the other one created it.
                 tx = payments.byKey(studentId, idempotencyKey).orElseThrow();
                 return checkoutFor(tx, customer);
             }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("plan", plan.code());
+            details.put("amountMinor", price.totalMinor());
+            details.put("currency", currency);
+            details.put("provider", provider);
+            if (price.code() != null) {
+                details.put("code", price.code());
+                details.put("discountMinor", price.discountMinor());
+            }
+            if (price.priceMinor() < price.listPriceMinor()) {
+                details.put("salePriceMinor", price.priceMinor());
+            }
+            audit.record(studentId, "CHECKOUT_STARTED", "PAYMENT", id, details);
+            if ("FREE".equals(provider)) {
+                // Nothing to pay: our own server is the trusted source of this result.
+                apply(new Notification("FREE", id + ":FREE", id, Outcome.SUCCEEDED, null, "0.00", currency,
+                        "Free with code " + price.code()), bytes(id.toString()));
+            }
             tx = payments.transaction(id).orElseThrow();
-            audit.record(studentId, "CHECKOUT_STARTED", "PAYMENT", id,
-                    Map.of("plan", plan.code(), "amountMinor", price, "currency", currency, "provider", provider()));
         } else if (!tx.planId().equals(planId)) {
             throw new ApiException(ProblemCode.CONFLICT, "This request key was already used for a different plan.");
         }
         return checkoutFor(tx, customer);
+    }
+
+    /** The price a student would pay now, for showing before checkout. */
+    @Transactional(readOnly = true)
+    public Pricing.Quote quote(UUID studentId, UUID planId, String currency, String code) {
+        Plans.Plan plan = plans.find(planId).filter(Plans.Plan::active)
+                .orElseThrow(() -> new ApiException(ProblemCode.NOT_FOUND, "This plan isn't available."));
+        return pricing.quote(studentId, plan, currency, code, clock.instant(), false);
     }
 
     /**
@@ -120,9 +154,16 @@ public class PaymentService {
 
     private Checkout checkoutFor(Transaction tx, Customer customer) {
         String base = settings.publicBaseUrl().toString().replaceAll("/+$", "");
+        if ("FREE".equals(tx.provider())) {
+            return new Checkout(tx.id(), tx.provider(), tx.status(), URI.create(base + "/checkout/return?tx=" + tx.id()),
+                    "GET", Map.of());
+        }
         if ("TEST".equals(tx.provider())) {
             return new Checkout(tx.id(), tx.provider(), tx.status(), URI.create(base + "/checkout/test/" + tx.id()), "GET",
                     Map.of());
+        }
+        if (customer == null) {
+            throw Requests.invalid("customer", "PayHere needs your name, email, phone and address");
         }
         SubscriptionProperties.PayHere payhere = settings.payhere();
         Map<String, String> f = new LinkedHashMap<>();

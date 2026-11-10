@@ -18,11 +18,13 @@ public class PlanController {
     private final Plans plans;
     private final PaymentService payments;
     private final ExamViewRepository exams;
+    private final java.time.Clock clock;
 
-    public PlanController(Plans plans, PaymentService payments, ExamViewRepository exams) {
+    public PlanController(Plans plans, PaymentService payments, ExamViewRepository exams, java.time.Clock clock) {
         this.plans = plans;
         this.payments = payments;
         this.exams = exams;
+        this.clock = clock;
     }
 
     public record ExamRef(UUID examId, String title, String slug) {
@@ -31,10 +33,12 @@ public class PlanController {
     /**
      * @param exams  the published exams the plan covers (empty for scope ALL, which covers every exam)
      * @param limits attempts per exam type, per exam: null = unlimited, 0 = not included
+     * @param salePriceLkrMinor the sale price while a sale is on now (null otherwise); saleEndsAt says until when
      */
     public record PlanView(UUID id, String name, String description, String scopeType, UUID categoryId,
                            List<ExamRef> exams, int durationMonths, Long priceLkrMinor, Long priceUsdMinor,
-                           Plans.Limits limits) {
+                           Plans.Limits limits, Long salePriceLkrMinor, Long salePriceUsdMinor,
+                           java.time.OffsetDateTime saleEndsAt) {
     }
 
     /**
@@ -54,14 +58,28 @@ public class PlanController {
         Map<UUID, ExamView> published = exams.find(onSale.stream().flatMap(p -> p.examIds().stream()).distinct().toList())
                 .stream().filter(ExamView::published)
                 .collect(Collectors.toMap(ExamView::examId, Function.identity()));
+        java.time.Instant now = clock.instant();
         List<PlanView> views = onSale.stream()
-                .map(p -> new PlanView(p.id(), p.name(), p.description(), p.scopeType(), p.categoryId(),
-                        p.examIds().stream().map(published::get).filter(java.util.Objects::nonNull)
-                                .map(e -> new ExamRef(e.examId(), e.title(), e.slug())).toList(),
-                        p.durationMonths(), p.priceLkrMinor(), p.priceUsdMinor(), p.limits()))
+                .map(p -> view(p, published, now))
                 // A plan whose exams are all unpublished has nothing to sell right now.
                 .filter(v -> "ALL".equals(v.scopeType()) || !v.exams().isEmpty())
                 .toList();
         return new Catalogue(payments.provider(), "TEST".equals(payments.provider()), views);
+    }
+
+    private static PlanView view(Plans.Plan p, Map<UUID, ExamView> published, java.time.Instant now) {
+        Long saleLkr = saleIn(p, "LKR", now);
+        Long saleUsd = saleIn(p, "USD", now);
+        return new PlanView(p.id(), p.name(), p.description(), p.scopeType(), p.categoryId(),
+                        p.examIds().stream().map(published::get).filter(java.util.Objects::nonNull)
+                                .map(e -> new ExamRef(e.examId(), e.title(), e.slug())).toList(),
+                        p.durationMonths(), p.priceLkrMinor(), p.priceUsdMinor(), p.limits(), saleLkr, saleUsd,
+                        saleLkr == null && saleUsd == null ? null : p.sale().endsAt());
+    }
+
+    private static Long saleIn(Plans.Plan p, String currency, java.time.Instant now) {
+        Long regular = p.priceMinor(currency);
+        Long price = p.priceNow(currency, now);
+        return regular != null && price != null && price < regular ? price : null;
     }
 }

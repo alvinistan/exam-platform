@@ -26,6 +26,9 @@ const plan = (id: string, months: number, lkr: number | null, usd: number | null
   priceLkrMinor: lkr,
   priceUsdMinor: usd,
   limits: unlimited,
+  salePriceLkrMinor: null,
+  salePriceUsdMinor: null,
+  saleEndsAt: null,
   ...extra,
 });
 const plans = [
@@ -64,6 +67,7 @@ const payment = (overrides: Record<string, unknown> = {}) => ({
   createdAt: '2026-10-26T08:00:00Z',
   premiumStartsAt: null,
   premiumEndsAt: null,
+  discountMinor: 0,
   ...overrides,
 });
 
@@ -199,6 +203,7 @@ describe('checkout', () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
       planId: 'p3',
       currency: 'LKR',
+      code: null,
       customer: {
         firstName: 'Amaya',
         lastName: 'Perera',
@@ -257,7 +262,7 @@ describe('checkout', () => {
     expect(await screen.findByText('LKR 3,900.00')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Pay (test)' }));
 
-    expect(await screen.findByRole('heading', { name: 'You have Premium' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Your plan has started' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent(/Payment of LKR 3,900.00 received for 3 months/);
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/payments/test/tx-1'))).toBe(true);
   });
@@ -316,6 +321,7 @@ describe('admin plans and payments', () => {
       displayOrder: 1,
       version: 0,
       updatedAt: '2026-10-26T08:00:00Z',
+      sale: { priceLkrMinor: null, priceUsdMinor: null, startsAt: null, endsAt: null },
     };
     let created: unknown;
     mockApi({
@@ -351,6 +357,9 @@ describe('admin plans and payments', () => {
             failureReason: null,
             createdAt: '2026-10-26T08:00:00Z',
             updatedAt: '2026-10-26T08:00:00Z',
+            listPriceMinor: 150000,
+            discountCodeId: null,
+            discountMinor: 0,
           },
         ]),
       'GET /api/admin/users/names': () => jsonResponse([{ id: 'stu-1', displayName: 'Nimal Perera' }]),

@@ -14,7 +14,7 @@ export interface ExamFreeAttempts {
 export interface Entitlement {
   id: string;
   studentId: string;
-  source: 'SUBSCRIPTION' | 'MANUAL';
+  source: 'SUBSCRIPTION' | 'MANUAL' | 'CAMPAIGN';
   state: 'ACTIVE' | 'SCHEDULED' | 'EXPIRED' | 'REVOKED';
   startsAt: string;
   endsAt: string;
