@@ -71,6 +71,7 @@ abstract class PaymentTestSupport {
         jdbc.update("TRUNCATE entitlement_use");
         jdbc.update("DELETE FROM entitlement");
         jdbc.update("DELETE FROM subscription");
+        jdbc.update("DELETE FROM refund");
         jdbc.update("DELETE FROM payment_transaction");
         jdbc.update("TRUNCATE discount_code_plan, campaign_exam");
         jdbc.update("DELETE FROM discount_code");

@@ -129,17 +129,21 @@ public class UserRepository {
                 .param("email", email).update() == 1;
     }
 
-    public record UserName(UUID id, String displayName) {
+    public record UserName(UUID id, String displayName, String email) {
     }
 
-    /** Display names for audit columns in other services' admin screens; deleted users show as "Deleted user". */
+    /**
+     * Display names (and emails, for finance and support) for other services' admin screens; deleted users show as
+     * "Deleted user".
+     */
     public List<UserName> names(java.util.Collection<UUID> ids) {
         if (ids.isEmpty()) {
             return List.of();
         }
-        return jdbc.sql("SELECT id, display_name FROM app_user WHERE id IN (:ids) ORDER BY display_name")
+        return jdbc.sql("SELECT id, display_name, email FROM app_user WHERE id IN (:ids) ORDER BY display_name")
                 .param("ids", ids)
-                .query((rs, row) -> new UserName(rs.getObject("id", UUID.class), rs.getString("display_name")))
+                .query((rs, row) -> new UserName(rs.getObject("id", UUID.class), rs.getString("display_name"),
+                        rs.getString("email")))
                 .list();
     }
 

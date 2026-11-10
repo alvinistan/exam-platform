@@ -226,8 +226,8 @@ paths:
     get:
       tags: [Admin users]
       operationId: userNames
-      summary: Display names for up to 100 user IDs
-      description: Lets admin screens of other services show who created or changed a record (FR-QB-12). Deleted users show as "Deleted user".
+      summary: Display names and emails for up to 100 user IDs
+      description: Lets admin screens of other services show who created or changed a record (FR-QB-12), and finance screens show who paid. Deleted users show as "Deleted user".
       parameters:
         - name: ids
           in: query
@@ -244,10 +244,11 @@ paths:
                 type: array
                 items:
                   type: object
-                  required: [id, displayName]
+                  required: [id, displayName, email]
                   properties:
                     id: { type: string, format: uuid }
                     displayName: { type: string }
+                    email: { type: string }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
