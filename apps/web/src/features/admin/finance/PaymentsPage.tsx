@@ -194,7 +194,7 @@ export function PaymentsPage() {
       ) : (
         <Card className="flex flex-col gap-3 p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] border-collapse text-[14.5px]">
+            <table className="w-full min-w-[920px] border-collapse text-[14.5px]">
               <caption className="sr-only">Payments</caption>
               <thead>
                 <tr className="border-b border-border bg-[#fafbfc] text-left text-[12.5px] font-bold tracking-wider text-muted uppercase">
@@ -226,7 +226,7 @@ export function PaymentsPage() {
                       <td className="px-4 py-3 whitespace-nowrap">{dateTime.format(new Date(p.createdAt))}</td>
                       <td className="px-4 py-3">
                         <span className="font-semibold">{who?.displayName ?? 'Student'}</span>
-                        {who && <span className="block text-[13px] break-all text-muted">{who.email}</span>}
+                        {who && <span className="block text-[13px] whitespace-nowrap text-muted">{who.email}</span>}
                       </td>
                       <td className="px-4 py-3">
                         {p.planName}

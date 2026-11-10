@@ -152,7 +152,7 @@ function Summary({ data }: { data: FinanceSummary }) {
         </div>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="flex flex-col gap-6">
         <EndingSoon rows={data.endingSoon} />
         <ByPlan rows={data.byPlan} />
       </div>
@@ -169,20 +169,20 @@ function MoneyCard({ money: m }: { money: Money }) {
           {m.paidPayments} paid · {m.refunds} refund{m.refunds === 1 ? '' : 's'}
         </Badge>
       </div>
-      <dl className="grid grid-cols-3 gap-3">
+      <div>
+        <p className="text-[13px] text-muted">Net (paid − refunded)</p>
+        <p className="text-[26px] leading-tight font-extrabold tabular-nums">{formatPrice(m.netMinor, m.currency)}</p>
+      </div>
+      <dl className="grid grid-cols-2 gap-3 border-t border-border pt-3">
         <div>
           <dt className="text-[13px] text-muted">Paid</dt>
-          <dd className="text-lg font-bold tabular-nums">{formatPrice(m.paidMinor, m.currency)}</dd>
+          <dd className="font-semibold whitespace-nowrap tabular-nums">{formatPrice(m.paidMinor, m.currency)}</dd>
         </div>
         <div>
           <dt className="text-[13px] text-muted">Refunded</dt>
-          <dd className="text-lg font-bold tabular-nums">
-            {m.refundedMinor > 0 ? `−${formatPrice(m.refundedMinor, m.currency)}` : '—'}
+          <dd className="font-semibold whitespace-nowrap tabular-nums">
+            {m.refundedMinor > 0 ? `−${formatPrice(m.refundedMinor, m.currency)}` : 'Nothing'}
           </dd>
-        </div>
-        <div>
-          <dt className="text-[13px] text-muted">Net</dt>
-          <dd className="text-lg font-extrabold tabular-nums">{formatPrice(m.netMinor, m.currency)}</dd>
         </div>
       </dl>
       {m.discountMinor > 0 && (

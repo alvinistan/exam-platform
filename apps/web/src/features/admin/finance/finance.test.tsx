@@ -92,8 +92,7 @@ describe('finance summary', () => {
     expect(await screen.findByText('LKR 12,900.00')).toBeInTheDocument();
     expect(screen.getByText('−LKR 1,500.00')).toBeInTheDocument();
     expect(screen.getByText('LKR 11,400.00')).toBeInTheDocument();
-    // USD: paid and net are both 45.00.
-    expect(screen.getAllByText('USD 45.00', { selector: 'dd' })).toHaveLength(2);
+    expect(screen.getByText('USD 45.00', { selector: 'dd' })).toBeInTheDocument();
     expect(screen.getByText('LKR 600.00 given in discount codes.')).toBeInTheDocument();
     expect(screen.getByText('Refunds are recorded by hand')).toBeInTheDocument();
     expect(screen.getByText('With a paid plan now').nextSibling).toHaveTextContent('12');
