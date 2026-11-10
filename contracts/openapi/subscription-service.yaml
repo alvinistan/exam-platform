@@ -210,6 +210,14 @@ paths:
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
         '409': { description: The key was already used for a different plan (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
         '429': { $ref: './common.yaml#/components/responses/TooManyRequests' }
+  /api/subscriptions/payments:
+    get:
+      tags: [Subscriptions]
+      operationId: myPayments
+      summary: The student's own payments, newest first (at most 100), with refunds
+      responses:
+        '200': { description: Payments., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Payment' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
   /api/subscriptions/checkout/{transactionId}:
     get:
       tags: [Plans]
@@ -456,13 +464,133 @@ paths:
         '409': { description: Already ended (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
   /api/admin/billing/payments:
     get:
-      tags: [Admin billing]
-      operationId: listPayments
-      summary: Payments, newest first (up to 200)
+      tags: [Admin finance]
+      operationId: searchPayments
+      summary: Payments, newest first, with refunds (paged)
+      description: Days are calendar days in tz. The finance screens' CSV export pages through this.
       parameters:
+        - { name: from, in: query, required: false, description: First day (inclusive)., schema: { type: string, format: date } }
+        - { name: to, in: query, required: false, description: Last day (inclusive)., schema: { type: string, format: date } }
+        - { name: tz, in: query, required: false, schema: { type: string, default: UTC, example: Asia/Colombo } }
+        - name: status
+          in: query
+          required: false
+          description: 'PAID (succeeded and something was paid), FREE (free with a code), REFUNDED (any refund went through), or a payment status.'
+          schema: { type: string, enum: [PAID, FREE, PENDING, FAILED, CANCELLED, REFUNDED] }
+        - { name: planId, in: query, required: false, schema: { type: string, format: uuid } }
         - { name: studentId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: currency, in: query, required: false, schema: { type: string, enum: [LKR, USD] } }
+        - { name: code, in: query, required: false, description: A discount code (case doesn't matter)., schema: { type: string, maxLength: 40 } }
+        - { name: q, in: query, required: false, description: A payment id or PayHere payment id., schema: { type: string, maxLength: 100 } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, required: false, schema: { type: integer, enum: [10, 25, 50, 100], default: 25 } }
       responses:
-        '200': { description: Payments., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AdminPayment' } } } } }
+        '200':
+          description: One page of payments.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/FinancePayment' } }
+                  page: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/billing/payments/{transactionId}:
+    get:
+      tags: [Admin finance]
+      operationId: paymentDetail
+      summary: One payment with its refunds and what can still be refunded
+      parameters:
+        - { name: transactionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The payment.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payment, refunds, refundableMinor, apiRefunds]
+                properties:
+                  payment: { $ref: '#/components/schemas/FinancePayment' }
+                  refunds: { type: array, items: { $ref: '#/components/schemas/Refund' } }
+                  refundableMinor: { type: integer, description: 'Paid minus refunds pending or done; 0 when nothing can be refunded.' }
+                  apiRefunds: { type: boolean, description: "Whether a refund can go through PayHere's Refund API (an API key is set and the payment went through PayHere)." }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+  /api/admin/billing/payments/{transactionId}/refunds:
+    post:
+      tags: [Admin finance]
+      operationId: refundPayment
+      summary: Refund all or part of a successful payment (audited)
+      description: >-
+        With method PAYHERE_API (the default when it's set up) the refund is recorded PENDING, sent to PayHere, then
+        saved as SUCCEEDED or FAILED; a FAILED refund doesn't count against the payment. With MANUAL the administrator
+        refunded in PayHere's portal (or another way) and the refund is recorded SUCCEEDED. With stopAccess the plan the
+        payment bought stops when the refund succeeds.
+      parameters:
+        - { name: transactionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, stopAccess]
+              properties:
+                amountMinor: { type: [integer, 'null'], minimum: 1, description: 'null = everything not refunded yet.' }
+                reason: { type: string, minLength: 3, maxLength: 500, description: "Kept in the payment's history; students don't see it." }
+                stopAccess: { type: boolean }
+                method: { type: [string, 'null'], enum: [PAYHERE_API, MANUAL, null] }
+                reference: { type: [string, 'null'], maxLength: 100, description: "For MANUAL: PayHere's refund number or where the money went." }
+      responses:
+        '201': { description: "The refund (status SUCCEEDED, FAILED or, if PayHere didn't answer, PENDING).", content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: 'The payment didn''t succeed, was free, or is already refunded in full (CONFLICT).', content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/refunds/{refundId}/resolve:
+    post:
+      tags: [Admin finance]
+      operationId: resolveRefund
+      summary: Settle a refund PayHere never answered, after checking PayHere (audited)
+      parameters:
+        - { name: refundId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [SUCCEEDED, FAILED] }
+                reference: { type: [string, 'null'], maxLength: 100 }
+                note: { type: [string, 'null'], maxLength: 500 }
+      responses:
+        '200': { description: The refund., content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: Already settled (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/finance/summary:
+    get:
+      tags: [Admin finance]
+      operationId: financeSummary
+      summary: Money, payments and subscribers between two days
+      description: Default range is the last 30 days (today included); at most 400 days. Refunds count on the day they were made.
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date } }
+        - { name: tz, in: query, required: false, schema: { type: string, default: UTC, example: Asia/Colombo } }
+      responses:
+        '200': { description: The summary., content: { application/json: { schema: { $ref: '#/components/schemas/FinanceSummary' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/billing/entitlements:
@@ -705,9 +833,21 @@ components:
         premiumStartsAt: { type: [string, 'null'], format: date-time }
         premiumEndsAt: { type: [string, 'null'], format: date-time }
         discountMinor: { type: integer, description: Taken off by a discount code. }
-    AdminPayment:
+        paymentRef: { type: [string, 'null'], description: "PayHere's payment id." }
+        listPriceMinor: { type: [integer, 'null'], description: "The plan's regular price at checkout." }
+        refundedMinor: { type: integer, description: Refunds that went through. }
+        refunds:
+          type: array
+          description: Refunds that went through (no reasons or internal notes).
+          items:
+            type: object
+            required: [amountMinor, refundedAt]
+            properties:
+              amountMinor: { type: integer }
+              refundedAt: { type: string, format: date-time }
+    FinancePayment:
       type: object
-      required: [id, studentId, planId, planName, amountMinor, currency, provider, status, createdAt]
+      required: [id, studentId, planId, planName, durationMonths, provider, amountMinor, currency, status, discountMinor, refundedMinor, refundPendingMinor, refundState, createdAt, updatedAt]
       properties:
         id: { type: string, format: uuid }
         studentId: { type: string, format: uuid }
@@ -715,17 +855,120 @@ components:
         planName: { type: string }
         durationMonths: { type: integer }
         provider: { type: string, enum: [PAYHERE, TEST, FREE] }
-        providerRef: { type: [string, 'null'] }
-        idempotencyKey: { type: string }
+        providerRef: { type: [string, 'null'], description: "PayHere's payment id." }
         amountMinor: { type: integer }
-        currency: { type: string }
+        currency: { type: string, enum: [LKR, USD] }
         status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
         failureReason: { type: [string, 'null'] }
+        listPriceMinor: { type: [integer, 'null'], description: "The plan's regular price at checkout." }
+        discountMinor: { type: integer }
+        discountCode: { type: [string, 'null'] }
+        refundedMinor: { type: integer, description: Refunds that went through. }
+        refundPendingMinor: { type: integer, description: Refunds sent to PayHere and not answered yet. }
+        refundState: { type: string, enum: [NONE, PARTIAL, FULL] }
+        periodStatus: { type: [string, 'null'], enum: [ACTIVE, EXPIRED, CANCELLED, null], description: The plan period this payment bought. }
+        periodStartsAt: { type: [string, 'null'], format: date-time }
+        periodEndsAt: { type: [string, 'null'], format: date-time }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-        listPriceMinor: { type: [integer, 'null'], description: "The plan's regular price at checkout." }
-        discountCodeId: { type: [string, 'null'], format: uuid }
-        discountMinor: { type: integer }
+    Refund:
+      type: object
+      required: [id, transactionId, amountMinor, currency, reason, method, status, stopAccess, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        transactionId: { type: string, format: uuid }
+        amountMinor: { type: integer }
+        currency: { type: string, enum: [LKR, USD] }
+        reason: { type: string }
+        method: { type: string, enum: [PAYHERE_API, MANUAL] }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED] }
+        providerRef: { type: [string, 'null'], description: "PayHere's refund number, or the administrator's note." }
+        failureReason: { type: [string, 'null'] }
+        stopAccess: { type: boolean }
+        createdBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PageMeta:
+      type: object
+      required: [page, size, totalElements, totalPages]
+      properties:
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    FinanceSummary:
+      type: object
+      required: [from, to, tz, money, payments, byPlan, days, subscribers, endingSoon, apiRefunds]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        tz: { type: string }
+        money:
+          type: array
+          description: Per currency; amounts are never mixed.
+          items:
+            type: object
+            required: [currency, paidMinor, refundedMinor, netMinor, discountMinor, paidPayments, refunds]
+            properties:
+              currency: { type: string, enum: [LKR, USD] }
+              paidMinor: { type: integer }
+              refundedMinor: { type: integer }
+              netMinor: { type: integer, description: Paid minus refunded in the range. }
+              discountMinor: { type: integer, description: 'Given in discount codes, including free-with-code plans.' }
+              paidPayments: { type: integer }
+              refunds: { type: integer }
+        payments:
+          type: object
+          required: [paid, free, pending, failed, cancelled]
+          properties:
+            paid: { type: integer }
+            free: { type: integer }
+            pending: { type: integer }
+            failed: { type: integer }
+            cancelled: { type: integer }
+        byPlan:
+          type: array
+          items:
+            type: object
+            required: [planName, currency, payments, paidMinor]
+            properties:
+              planName: { type: string }
+              currency: { type: string, enum: [LKR, USD] }
+              payments: { type: integer }
+              paidMinor: { type: integer }
+        days:
+          type: array
+          description: Days with payments or refunds, in tz.
+          items:
+            type: object
+            required: [date, currency, paidMinor, refundedMinor, payments]
+            properties:
+              date: { type: string, format: date }
+              currency: { type: string, enum: [LKR, USD] }
+              paidMinor: { type: integer }
+              refundedMinor: { type: integer }
+              payments: { type: integer }
+        subscribers:
+          type: object
+          required: [activeNow, endingIn7Days, endingIn30Days, newBuyers, returningBuyers, freeAccessNow]
+          properties:
+            activeNow: { type: integer, description: Students with a paid plan active now. }
+            endingIn7Days: { type: integer, description: "Of those, whose last paid plan ends within 7 days." }
+            endingIn30Days: { type: integer }
+            newBuyers: { type: integer, description: Buyers in the range whose first paid payment ever is in the range. }
+            returningBuyers: { type: integer }
+            freeAccessNow: { type: integer, description: Students with campaign or given access now. }
+        endingSoon:
+          type: array
+          description: Students whose last paid plan ends within 30 days, soonest first (at most 50).
+          items:
+            type: object
+            required: [studentId, planName, endsAt]
+            properties:
+              studentId: { type: string, format: uuid }
+              planName: { type: string }
+              endsAt: { type: string, format: date-time }
+        apiRefunds: { type: boolean, description: "Whether PayHere's Refund API is set up." }
     ExamFreeAttempts:
       type: object
       required: [examId, title, slug, modes, freeAttempts]

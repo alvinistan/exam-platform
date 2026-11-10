@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api/client';
-import type { Limits, PaymentStatus, Provider, ScopeType } from '@/features/billing/api';
+import type { Limits, ScopeType } from '@/features/billing/api';
 import type { AdminExam } from '@/features/admin/catalog/api';
 
 /** contracts/openapi/subscription-service.yaml → Plan. */
@@ -45,26 +45,6 @@ export interface PlanInput {
   salePriceUsdMinor: number | null;
   saleStartsAt: string | null;
   saleEndsAt: string | null;
-}
-
-/** contracts/openapi/subscription-service.yaml → AdminPayment. */
-export interface AdminPayment {
-  id: string;
-  studentId: string;
-  planId: string;
-  planName: string;
-  durationMonths: number;
-  provider: Provider;
-  providerRef: string | null;
-  amountMinor: number;
-  currency: string;
-  status: PaymentStatus;
-  failureReason: string | null;
-  createdAt: string;
-  updatedAt: string;
-  listPriceMinor: number | null;
-  discountCodeId: string | null;
-  discountMinor: number;
 }
 
 /** contracts/openapi/subscription-service.yaml → DiscountCode. */
@@ -189,13 +169,6 @@ export function useAdminPlans() {
   return useQuery({
     queryKey: billingAdminKeys.plans(),
     queryFn: ({ signal }) => apiFetch<AdminPlan[]>('/admin/billing/plans', { signal }),
-  });
-}
-
-export function useAdminPayments() {
-  return useQuery({
-    queryKey: billingAdminKeys.payments(),
-    queryFn: ({ signal }) => apiFetch<AdminPayment[]>('/admin/billing/payments', { signal }),
   });
 }
 

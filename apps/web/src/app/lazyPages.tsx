@@ -26,6 +26,16 @@ export const ProgressPage = lazy(() => import('@/features/progress/ProgressPage'
 export const PlansPaymentsPage = lazy(() =>
   import('@/features/admin/billing/PlansPaymentsPage').then((m) => ({ default: m.PlansPaymentsPage })),
 );
+export const FinancePage = lazy(() =>
+  import('@/features/admin/finance/FinancePage').then((m) => ({ default: m.FinancePage })),
+);
+export const PaymentsPage = lazy(() =>
+  import('@/features/admin/finance/PaymentsPage').then((m) => ({ default: m.PaymentsPage })),
+);
+export const PaymentHistoryPage = lazy(() =>
+  import('@/features/account/PaymentHistoryPage').then((m) => ({ default: m.PaymentHistoryPage })),
+);
+export const ReceiptPage = lazy(() => import('@/features/account/ReceiptPage').then((m) => ({ default: m.ReceiptPage })));
 export const PromotionsPage = lazy(() =>
   import('@/features/admin/billing/PromotionsPage').then((m) => ({ default: m.PromotionsPage })),
 );

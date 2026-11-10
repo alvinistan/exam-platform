@@ -1,41 +1,28 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { CreditCard, Plus } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from '@/components/ui';
-import type { BadgeTone } from '@/components/ui';
-import { describeLimits, formatPrice, monthsLabel, type PaymentStatus } from '@/features/billing/api';
+import { describeLimits, formatPrice, monthsLabel } from '@/features/billing/api';
 import { PlanDialog } from './PlanDialog';
-import { useUserNames } from '@/features/admin/questions/api';
-import { useAdminPayments, useAdminPlans, usePlanExams, type AdminPlan } from './api';
+import { useAdminPlans, usePlanExams, type AdminPlan } from './api';
 
-const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const saleDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
 
-const statusTone: Record<PaymentStatus, BadgeTone> = {
-  SUCCEEDED: 'free',
-  PENDING: 'warning',
-  FAILED: 'danger',
-  CANCELLED: 'neutral',
-};
-const statusLabel: Record<PaymentStatus, string> = {
-  SUCCEEDED: 'Paid',
-  PENDING: 'Waiting',
-  FAILED: 'Failed',
-  CANCELLED: 'Cancelled',
-};
 
-/** /admin/plans — what Premium costs (plans on sale) and the payments students made. */
+/** /admin/plans — the plans on sale. Payments, refunds and reports are on their own pages (Phase 13). */
 export function PlansPaymentsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-tight">Plans &amp; payments</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">Plans</h1>
         <p className="text-muted">
           A plan gives attempts on one exam, a bundle, or every exam for its length. Prices, sales and attempts are yours to set;
-          payments go through PayHere. Free access and discount codes are in Promotions.
+          payments go through PayHere. Free access and discount codes are in Promotions;{' '}
+          <Link to="/admin/payments">payments and refunds</Link> and <Link to="/admin/finance">finance reports</Link> have their
+          own pages.
         </p>
       </div>
       <PlansCard />
-      <PaymentsCard />
     </div>
   );
 }
@@ -150,84 +137,6 @@ function PlansCard() {
         </div>
       )}
       {editing && <PlanDialog plan={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
-    </Card>
-  );
-}
-
-function PaymentsCard() {
-  const payments = useAdminPayments();
-  const names = useUserNames((payments.data ?? []).map((p) => p.studentId));
-  return (
-    <Card className="flex flex-col gap-5 p-6">
-      <div>
-        <h2 className="text-lg font-bold">Payments</h2>
-        <p className="text-[14.5px] text-muted">
-          Newest first. A payment counts only when PayHere confirms it to the server; “Waiting” means no confirmation yet.
-        </p>
-      </div>
-      {payments.isPending ? (
-        <Skeleton className="h-32 w-full" />
-      ) : payments.isError ? (
-        <ErrorState title="We couldn’t load the payments" onRetry={() => void payments.refetch()} />
-      ) : payments.data.length === 0 ? (
-        <EmptyState title="No payments yet">
-          <p>Payments appear here as soon as a student starts checking out.</p>
-        </EmptyState>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-[720px] border-collapse text-[14.5px]">
-            <caption className="sr-only">Payments</caption>
-            <thead>
-              <tr className="border-b border-border bg-[#fafbfc] text-left text-[12.5px] font-bold tracking-wider text-muted uppercase">
-                <th scope="col" className="px-4 py-3">
-                  Date
-                </th>
-                <th scope="col" className="px-4 py-3">
-                  Student
-                </th>
-                <th scope="col" className="px-4 py-3">
-                  Plan
-                </th>
-                <th scope="col" className="px-4 py-3">
-                  Amount
-                </th>
-                <th scope="col" className="px-4 py-3">
-                  Status
-                </th>
-                <th scope="col" className="px-4 py-3">
-                  PayHere reference
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {payments.data.map((p) => (
-                <tr key={p.id} className="border-b border-border last:border-b-0">
-                  <td className="px-4 py-3 whitespace-nowrap">{dateTime.format(new Date(p.createdAt))}</td>
-                  <td className="px-4 py-3 font-semibold">{names.data?.get(p.studentId) ?? 'Unknown user'}</td>
-                  <td className="px-4 py-3">{p.planName}</td>
-                  <td className="px-4 py-3 whitespace-nowrap tabular-nums">
-                    {formatPrice(p.amountMinor, p.currency)}
-                    {p.discountMinor > 0 && (
-                      <span className="block text-[13px] text-muted">
-                        −{formatPrice(p.discountMinor, p.currency)} with a code
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge tone={statusTone[p.status]}>{statusLabel[p.status]}</Badge>
-                    {p.failureReason === 'CHARGEDBACK' && <span className="block text-[13px] text-danger-ink">Charged back</span>}
-                    {p.provider === 'TEST' && <span className="block text-[13px] text-muted">Test payment</span>}
-                    {p.provider === 'FREE' && <span className="block text-[13px] text-muted">Free with a code</span>}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-[13px] text-ink-2">
-                    {p.providerRef && p.provider === 'PAYHERE' ? p.providerRef : '—'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </Card>
   );
 }

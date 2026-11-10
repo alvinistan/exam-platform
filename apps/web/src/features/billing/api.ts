@@ -67,6 +67,13 @@ export interface Payment {
   premiumEndsAt: string | null;
   /** Taken off by a discount code. */
   discountMinor: number;
+  /** PayHere's payment id, for receipts and support. */
+  paymentRef: string | null;
+  /** The plan's regular price at checkout. */
+  listPriceMinor: number | null;
+  /** Refunds that went through. */
+  refundedMinor: number;
+  refunds: { amountMinor: number; refundedAt: string }[];
 }
 
 export interface SubscriptionPeriod {
@@ -157,7 +164,16 @@ export const billingKeys = {
   mine: (userId: string) => [...billingKeys.all, 'mine', userId] as const,
   payment: (id: string) => [...billingKeys.all, 'payment', id] as const,
   offers: () => [...billingKeys.all, 'offers'] as const,
+  history: () => [...billingKeys.all, 'history'] as const,
 };
+
+/** The student's own payments, newest first (at most 100), with refunds. */
+export function useMyPayments() {
+  return useQuery({
+    queryKey: billingKeys.history(),
+    queryFn: ({ signal }) => apiFetch<Payment[]>('/subscriptions/payments', { signal }),
+  });
+}
 
 export function useOffers() {
   return useQuery({
@@ -271,4 +287,19 @@ export function describeScope(plan: Pick<PublicPlan, 'scopeType' | 'exams'>): st
   if (plan.scopeType === 'ALL') return 'Every exam';
   if (plan.scopeType === 'EXAM') return plan.exams[0]?.title ?? 'One exam';
   return `${plan.exams.length} subjects: ${plan.exams.map((e) => e.title).join(', ')}`;
+}
+
+/** One label and tone for a student's payment, refunds included. */
+export function paymentState(p: Payment): { label: string; tone: 'free' | 'warning' | 'danger' | 'neutral' } {
+  if (p.status === 'SUCCEEDED') {
+    if (p.refundedMinor >= p.amountMinor && p.amountMinor > 0) return { label: 'Refunded', tone: 'neutral' };
+    if (p.refundedMinor > 0) return { label: 'Partly refunded', tone: 'warning' };
+    return { label: p.provider === 'FREE' ? 'Free with a code' : 'Paid', tone: 'free' };
+  }
+  if (p.failureReason === 'CHARGEDBACK') return { label: 'Reversed', tone: 'danger' };
+  return {
+    PENDING: { label: 'Waiting', tone: 'warning' as const },
+    FAILED: { label: 'Didn’t go through', tone: 'danger' as const },
+    CANCELLED: { label: 'Cancelled', tone: 'neutral' as const },
+  }[p.status];
 }

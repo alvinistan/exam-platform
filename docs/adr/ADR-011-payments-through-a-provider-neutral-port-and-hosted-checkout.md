@@ -72,3 +72,28 @@ The product owner chose **PayHere** (D8). How the decision is applied:
   counted start creates their entitlement row (`UNIQUE (campaign_id, student_id)`), so a campaign for thousands of
   students writes nothing up front. Ending a campaign closes it and revokes the entitlements it created.
 
+## Amendment — Phase 13 (10 Nov 2026): refunds and finance reports
+
+- **Refunds are their own records** (`refund`), never edits to the payment. A payment's refunded amount is the sum of
+  its SUCCEEDED refunds; PENDING and SUCCEEDED refunds together may not exceed the payment. The service checks this
+  under a row lock, and a database constraint trigger enforces it as well.
+- **Through PayHere's Refund API** when an API key is configured (`PAYHERE_APP_ID`/`PAYHERE_APP_SECRET`, OAuth
+  client credentials, token cached until shortly before expiry). It happens in three steps:
+  1. The refund is committed as PENDING.
+  2. PayHere is called **outside** any database transaction (20 s timeout).
+  3. The result is saved.
+  A crash between the steps leaves a PENDING refund. It still blocks a second refund of the same money, and the
+  administrator settles it after checking PayHere (`/refunds/{id}/resolve`). A full refund is sent without an amount;
+  a partial one with `amount` as "1500.00".
+- **Manual refunds** record a refund made in PayHere's portal (or another way) as SUCCEEDED, with an optional
+  reference. TEST payments can only be refunded manually.
+- **Access after a refund** is the administrator's choice per refund (`stopAccess`). When chosen, the subscription
+  period becomes CANCELLED and its entitlement is revoked ("Refunded") as soon as the refund succeeds. Learning history
+  is never touched.
+- **Reports** read the payment and refund tables directly:
+  - Money per currency (never converted).
+  - Refunds counted on the day they were made.
+  - Days grouped in the administrator's time zone.
+- **Privacy**: students see only refund amounts and dates. Reasons and notes stay internal. Emails reach finance
+  screens through identity-service's admin-only `/contacts` lookup, not `/names`.
+

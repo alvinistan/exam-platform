@@ -95,8 +95,9 @@ class FinanceTests extends PaymentTestSupport {
         assertThat(((Number) read(mine, "$[0].refundedMinor")).longValue()).isEqualTo(150000L);
         assertThat((List<Integer>) read(mine, "$[0].refunds[*].amountMinor")).containsExactly(50000, 100000);
         assertThat(mine.getContentAsString()).doesNotContain("within 7 days");
-        assertThat(jdbc.queryForList("SELECT action FROM audit_event WHERE target_type IN ('REFUND', 'SUBSCRIPTION') "
-                + "AND action LIKE '%REFUND%'", String.class))
+        // The audit log is append-only and shared by every test, so only this payment's entries are checked.
+        assertThat(jdbc.queryForList("SELECT action FROM audit_event WHERE action LIKE '%REFUND%' "
+                + "AND summary->>'transactionId' = ?", String.class, tx))
                 .containsExactlyInAnyOrder("REFUND_RECORDED", "REFUND_RECORDED", "SUBSCRIPTION_REFUNDED");
         verify(gateway, never()).refund(any(), any(), any());
     }
@@ -107,9 +108,9 @@ class FinanceTests extends PaymentTestSupport {
         Student s = Student.next();
         String full = buy(s, planId);
         String part = buy(s, planId);
-        jdbc.update("UPDATE payment_transaction SET provider = 'PAYHERE', provider_ref = 'PH-' || left(id::text, 8)");
-        String fullRef = "PH-" + full.substring(0, 8);
-        String partRef = "PH-" + part.substring(0, 8);
+        jdbc.update("UPDATE payment_transaction SET provider = 'PAYHERE', provider_ref = 'PH-' || right(id::text, 12)");
+        String fullRef = "PH-" + full.substring(full.length() - 12);
+        String partRef = "PH-" + part.substring(part.length() - 12);
         when(gateway.available()).thenReturn(true);
         when(gateway.refund(fullRef, null, "Asked for a refund within 7 days"))
                 .thenReturn(new RefundGateway.Result(true, "560034010257", "Successfully processed the refund"));

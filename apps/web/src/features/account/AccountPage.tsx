@@ -228,9 +228,14 @@ function PlanCard() {
           )}
           {me.data.payments.length > 0 && (
             <div className="flex flex-col gap-2">
-              <h3 className="text-[13px] font-bold tracking-wider text-muted uppercase">Payments</h3>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-[13px] font-bold tracking-wider text-muted uppercase">Payments</h3>
+                <Link to="/account/payments" className="text-[14px] font-semibold">
+                  All payments and receipts
+                </Link>
+              </div>
               <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-                {me.data.payments.map((p) => (
+                {me.data.payments.slice(0, 5).map((p) => (
                   <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-[14.5px]">
                     <span>
                       <span className="font-semibold">{p.planName}</span>
@@ -241,6 +246,7 @@ function PlanCard() {
                           p.premiumEndsAt &&
                           ` · Premium until ${longDate.format(new Date(p.premiumEndsAt))}`}
                         {p.failureReason === 'CHARGEDBACK' && ' · reversed'}
+                        {p.refundedMinor > 0 && ` · ${formatPrice(p.refundedMinor, p.currency)} refunded`}
                       </span>
                     </span>
                     <span className="flex items-center gap-3">

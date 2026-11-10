@@ -1,5 +1,36 @@
 # Changelog
 
+## Phase 13 — Finance reports and refunds
+
+- **Finance** (Administration → Finance), for a period you choose (last 7 or 30 days, this or last month, this year,
+  or custom), in your own time zone:
+  - Paid, refunded and net amounts per currency, and discounts given.
+  - Payments by what happened to them, and a chart of paid per day (or month).
+  - Subscribers: with a paid plan now, ending within 7 or 30 days, new and returning buyers, free access.
+  - Students whose plan ends soon, with their email, and totals by plan.
+- **Payments & refunds** (Administration → Payments & refunds): every payment, newest first, filtered by dates,
+  status (paid, refunded, free, waiting, failed, cancelled), currency, plan, discount code or payment id, with the
+  student's name and email. **Download CSV** (up to 5,000 rows, with names, emails, list price, discount, paid,
+  refunded, net), protected against spreadsheet formula injection.
+- **Refunds**: open a payment and refund all or part of it, with a reason (students don't see it), choosing whether
+  the plan stops straight away. A confirmation step shows exactly what happens.
+  - With a PayHere API key (`PAYHERE_APP_ID`, `PAYHERE_APP_SECRET`) the refund goes through PayHere's Refund API;
+    otherwise refund in PayHere's portal and record it.
+  - A refund PayHere never answered stays "waiting" and still counts against the payment until the administrator
+    records whether it went through.
+  - Refunds can never add up to more than the payment (checked by the server and by the database). Everything is
+    audited.
+- **Students**: Account → All payments and receipts lists every payment with refunds; each paid one has a printable
+  receipt (list price, sale, discount code, paid, refunds, net, PayHere payment id). Print or save as PDF.
+- **Backend**:
+  - subscription-service migration V7 (`refund` table with a trigger keeping refunds within the payment, report
+    indexes).
+  - New endpoints: `GET /api/admin/billing/payments` (now filtered and paged), `/payments/{id}`,
+    `POST /payments/{id}/refunds`, `POST /refunds/{id}/resolve`, `GET /finance/summary`, `GET /api/subscriptions/payments`.
+  - identity-service: `GET /api/admin/users/contacts` (name and email for finance; `/names` stays without emails).
+  - ADR-011 amended.
+- The admin "Plans & payments" page is now "Plans"; payments moved to their own page.
+
 ## Phase 12 — Mathematical and chemical formulas in questions
 
 - **Formulas everywhere a question is written**: the question, every option, the explanation, key points and

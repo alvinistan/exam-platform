@@ -199,6 +199,13 @@ chosen students for 1–12 months).
   confirmation arrives; the return page waits for it.
 - **Live**: `PAYHERE_SANDBOX=false`, live merchant credentials and an https `PUBLIC_BASE_URL`; the service refuses to
   start otherwise.
+- **Refunds** (Phase 13): **Administration → Payments & refunds** → open a payment → Refund (all or part, with a
+  reason, and whether the plan stops). Without a PayHere API key, refund in PayHere's portal and record it there. To
+  refund straight from the admin panel, create an API key in PayHere (Settings → API Keys) with refund permission and
+  set `PAYHERE_APP_ID` and `PAYHERE_APP_SECRET`; for the live account PayHere must also whitelist the server's domain
+  and IP. **Administration → Finance** shows paid, refunded and net amounts per currency, payments, subscribers and
+  plans ending soon; Payments has filters and a CSV download. Students see their payments, refunds and printable
+  receipts under **Account → All payments and receipts**.
 
 ## Conventions
 
