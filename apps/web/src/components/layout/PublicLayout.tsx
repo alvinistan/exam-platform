@@ -18,7 +18,7 @@ export function PublicLayout() {
       >
         Skip to content
       </a>
-      <header className="border-b border-border bg-surface">
+      <header className="border-b border-border bg-surface print:hidden">
         <div className="mx-auto flex min-h-[68px] max-w-[1200px] items-center justify-between gap-4 px-4 sm:px-8">
           <div className="flex min-w-0 items-center gap-3 sm:gap-6">
             <Brand />
@@ -45,7 +45,7 @@ export function PublicLayout() {
           <Outlet />
         </Suspense>
       </main>
-      <footer className="border-t border-border bg-surface">
+      <footer className="border-t border-border bg-surface print:hidden">
         <div className="mx-auto max-w-[1200px] px-4 py-6 text-sm text-muted sm:px-8">
           © {new Date().getFullYear()} Leenex Labs · From potential to power
         </div>

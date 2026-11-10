@@ -71,6 +71,11 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
+    public java.util.List<UserRepository.UserContact> contacts(java.util.Collection<UUID> ids) {
+        return users.contacts(ids);
+    }
+
+    @Transactional(readOnly = true)
     public UserRepository.Page search(String query, String role, String status, int page, int size) {
         return users.search(query, role, status, page, size);
     }

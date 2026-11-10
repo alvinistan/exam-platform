@@ -251,6 +251,36 @@ paths:
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/users/contacts:
+    get:
+      tags: [Admin users]
+      operationId: userContacts
+      summary: Names and emails for up to 100 user IDs
+      description: For finance screens (who paid, whose plan ends soon) and their CSV export. Kept apart from /names so screens that only show who changed a record don't receive emails.
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          style: form
+          explode: false
+          schema: { type: array, minItems: 1, maxItems: 100, items: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Users that exist.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [id, displayName, email]
+                  properties:
+                    id: { type: string, format: uuid }
+                    displayName: { type: string }
+                    email: { type: string }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/users/{userId}/roles/{role}:
     parameters:
       - { name: userId, in: path, required: true, schema: { type: string, format: uuid } }

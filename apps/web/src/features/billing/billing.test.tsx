@@ -304,7 +304,7 @@ describe('checkout', () => {
 const admin = { id: 'admin-1', roles: ['ADMIN', 'STUDENT'], displayName: 'Kani Admin', email: 'kani@example.com' };
 
 describe('admin plans and payments', () => {
-  it('lists plans and payments and creates a plan with an exact price', async () => {
+  it('lists plans and creates a plan with an exact price', async () => {
     const adminPlan = {
       id: 'sci1',
       name: 'Science – 1 month',
@@ -341,41 +341,16 @@ describe('admin plans and payments', () => {
         created = body;
         return jsonResponse({ ...adminPlan, id: 'p-new' }, 201);
       },
-      'GET /api/admin/billing/payments': () =>
-        jsonResponse([
-          {
-            id: 'tx-9',
-            studentId: 'stu-1',
-            planId: 'p1',
-            planName: '1 month',
-            durationMonths: 1,
-            provider: 'PAYHERE',
-            providerRef: '320027150501',
-            amountMinor: 150000,
-            currency: 'LKR',
-            status: 'SUCCEEDED',
-            failureReason: null,
-            createdAt: '2026-10-26T08:00:00Z',
-            updatedAt: '2026-10-26T08:00:00Z',
-            listPriceMinor: 150000,
-            discountCodeId: null,
-            discountMinor: 0,
-          },
-        ]),
-      'GET /api/admin/users/names': () => jsonResponse([{ id: 'stu-1', displayName: 'Nimal Perera' }]),
     });
     renderRoute('/admin/plans');
-    expect(await screen.findByRole('heading', { name: 'Plans & payments' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Plans' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'payments and refunds' })).toHaveAttribute('href', '/admin/payments');
     const plansTable = await screen.findByRole('table', { name: 'Plans' });
     expect(within(plansTable).getByText('LKR 3,000.00')).toBeInTheDocument();
     expect(within(plansTable).getByText('USD 15.00')).toBeInTheDocument();
     expect(await within(plansTable).findByText('Science')).toBeInTheDocument();
     expect(within(plansTable).getByText('Mock exams: 8 attempts')).toBeInTheDocument();
     expect(within(plansTable).getByText('On sale')).toBeInTheDocument();
-    const paymentsTable = await screen.findByRole('table', { name: 'Payments' });
-    expect(await within(paymentsTable).findByText('Nimal Perera')).toBeInTheDocument();
-    expect(within(paymentsTable).getByText('Paid')).toBeInTheDocument();
-    expect(within(paymentsTable).getByText('320027150501')).toBeInTheDocument();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'New plan' }));

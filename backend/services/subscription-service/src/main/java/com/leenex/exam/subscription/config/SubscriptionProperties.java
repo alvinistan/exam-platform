@@ -35,12 +35,32 @@ public record SubscriptionProperties(@DefaultValue CatalogFeed catalogFeed, @Def
     }
 
     /**
-     * @param sandbox true: sandbox.payhere.lk (test cards, no real money); false: www.payhere.lk
+     * @param sandbox   true: sandbox.payhere.lk (test cards, no real money); false: www.payhere.lk
+     * @param appId     PayHere API key (Settings > API Keys) for the Refund API; empty = refunds are recorded manually
+     * @param appSecret its secret
      */
-    public record PayHere(String merchantId, String merchantSecret, @DefaultValue("true") boolean sandbox) {
+    public record PayHere(String merchantId, String merchantSecret, @DefaultValue("true") boolean sandbox, String appId,
+                          String appSecret) {
 
         public URI checkoutUrl() {
             return URI.create(sandbox ? "https://sandbox.payhere.lk/pay/checkout" : "https://www.payhere.lk/pay/checkout");
+        }
+
+        /** Whether refunds can go through PayHere's Refund API. */
+        public boolean refundApi() {
+            return appId != null && !appId.isBlank() && appSecret != null && !appSecret.isBlank();
+        }
+
+        private String host() {
+            return sandbox ? "https://sandbox.payhere.lk" : "https://www.payhere.lk";
+        }
+
+        public URI tokenUrl() {
+            return URI.create(host() + "/merchant/v1/oauth/token");
+        }
+
+        public URI refundUrl() {
+            return URI.create(host() + "/merchant/v1/payment/refund");
         }
     }
 

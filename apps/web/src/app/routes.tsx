@@ -17,6 +17,10 @@ import {
   NewExamPage,
   PlansPaymentsPage,
   PromotionsPage,
+  FinancePage,
+  PaymentsPage,
+  PaymentHistoryPage,
+  ReceiptPage,
   ProgressPage,
   QuestionEditorPage,
   QuestionImportPage,
@@ -113,6 +117,22 @@ export const routes: RouteObject[] = [
         ),
       },
       {
+        path: 'account/payments',
+        element: (
+          <RequireAuth>
+            <PaymentHistoryPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'account/payments/:transactionId/receipt',
+        element: (
+          <RequireAuth>
+            <ReceiptPage />
+          </RequireAuth>
+        ),
+      },
+      {
         path: 'admin',
         element: (
           <RequireRole role="ADMIN">
@@ -129,6 +149,8 @@ export const routes: RouteObject[] = [
           { path: 'access', element: <AccessPage /> },
           { path: 'plans', element: <PlansPaymentsPage /> },
           { path: 'promotions', element: <PromotionsPage /> },
+          { path: 'finance', element: <FinancePage /> },
+          { path: 'payments', element: <PaymentsPage /> },
           { path: 'content', element: <ContentLibraryPage /> },
           { path: 'questions', element: <QuestionsPage /> },
           { path: 'questions/new', element: <QuestionEditorPage /> },

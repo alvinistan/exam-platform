@@ -46,6 +46,9 @@ subscription:
       merchant-id: ${PAYHERE_MERCHANT_ID:}
       merchant-secret: ${PAYHERE_MERCHANT_SECRET:}
       sandbox: ${PAYHERE_SANDBOX:true}
+      # Phase 13: PayHere API key (Settings > API Keys) for automatic refunds; empty = refunds are recorded manually.
+      app-id: ${PAYHERE_APP_ID:}
+      app-secret: ${PAYHERE_APP_SECRET:}
 
 platform:
   security:

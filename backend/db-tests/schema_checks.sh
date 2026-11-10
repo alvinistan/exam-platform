@@ -97,6 +97,15 @@ deny billing "campaign for everyone needs an end" "INSERT INTO campaign (id,name
 ok   billing "campaign for chosen students" "INSERT INTO campaign (id,name,scope_type,audience,starts_at,duration_months,created_by) VALUES ('$X1','Gift','ALL','SELECTED',now(),3,'$U1')"
 ok   billing "campaign access"            "INSERT INTO entitlement (id,student_id,source,campaign_id,granted_by,grant_reason,starts_at,ends_at) VALUES (gen_random_uuid(),'$U1','CAMPAIGN','$X1','$U1','Campaign: Gift',now(),now()+interval '3 months')"
 deny billing "campaign access given once per student" "INSERT INTO entitlement (id,student_id,source,campaign_id,granted_by,grant_reason,starts_at,ends_at) VALUES (gen_random_uuid(),'$U1','CAMPAIGN','$X1','$U1','Campaign: Gift',now(),now()+interval '3 months')"
+T1=62000000-0000-0000-0000-000000000001
+ok   billing "paid payment to refund"     "INSERT INTO payment_transaction (id,student_id,plan_id,plan_name,duration_months,provider,idempotency_key,amount_minor,currency,status) VALUES ('$T1','$U1','$P1','6 months',6,'PAYHERE','ikrefund',450000,'LKR','SUCCEEDED')"
+ok   billing "partial refund"             "INSERT INTO refund (id,transaction_id,amount_minor,currency,reason,method,status,stop_access,created_by) VALUES (gen_random_uuid(),'$T1',200000,'LKR','Asked within 7 days','MANUAL','SUCCEEDED',false,'$U1')"
+deny billing "refunds can't exceed the payment" "INSERT INTO refund (id,transaction_id,amount_minor,currency,reason,method,status,stop_access,created_by) VALUES (gen_random_uuid(),'$T1',250001,'LKR','Too much','MANUAL','PENDING',false,'$U1')"
+ok   billing "a failed refund doesn't count" "INSERT INTO refund (id,transaction_id,amount_minor,currency,reason,method,status,stop_access,created_by) VALUES (gen_random_uuid(),'$T1',450000,'LKR','PayHere refused','PAYHERE_API','FAILED',false,'$U1')"
+ok   billing "refund the rest"            "INSERT INTO refund (id,transaction_id,amount_minor,currency,reason,method,status,stop_access,created_by) VALUES (gen_random_uuid(),'$T1',250000,'LKR','The rest','PAYHERE_API','PENDING',true,'$U1')"
+deny billing "refund in another currency" "INSERT INTO refund (id,transaction_id,amount_minor,currency,reason,method,status,stop_access,created_by) VALUES (gen_random_uuid(),'$T1',1,'USD','Wrong currency','MANUAL','FAILED',false,'$U1')"
+deny billing "refund needs a reason"      "INSERT INTO refund (id,transaction_id,amount_minor,currency,reason,method,status,stop_access,created_by) VALUES (gen_random_uuid(),'$T1',1,'LKR','','MANUAL','FAILED',false,'$U1')"
+deny billing "refund method must be known" "INSERT INTO refund (id,transaction_id,amount_minor,currency,reason,method,status,stop_access,created_by) VALUES (gen_random_uuid(),'$T1',1,'LKR','Bank','CASH','FAILED',false,'$U1')"
 deny billing "audit is append-only"       "INSERT INTO audit_event (id,action,target_type) VALUES (gen_random_uuid(),'X','Y'); UPDATE audit_event SET action='Z'"
 
 echo "== identity"

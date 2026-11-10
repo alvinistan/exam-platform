@@ -45,9 +45,12 @@ public class SubscriptionController {
     private final AccessService access;
     private final ExamViewRepository exams;
     private final Clock clock;
+    private final com.leenex.exam.subscription.finance.Refunds refunds;
 
     public SubscriptionController(PaymentService service, Payments payments, EntitlementRepository entitlements,
-                                  ExamViewRepository exams, AccessService access, Clock clock) {
+                                  ExamViewRepository exams, AccessService access, Clock clock,
+                                  com.leenex.exam.subscription.finance.Refunds refunds) {
+        this.refunds = refunds;
         this.access = access;
         this.service = service;
         this.payments = payments;
@@ -111,11 +114,22 @@ public class SubscriptionController {
 
     public record PaymentView(UUID id, String planName, int durationMonths, long amountMinor, String currency,
                               String provider, String status, String failureReason, OffsetDateTime createdAt,
-                              OffsetDateTime premiumStartsAt, OffsetDateTime premiumEndsAt, long discountMinor) {
+                              OffsetDateTime premiumStartsAt, OffsetDateTime premiumEndsAt, long discountMinor,
+                              String paymentRef, Long listPriceMinor, long refundedMinor, List<RefundView> refunds) {
+    }
+
+    /** A refund that went through, as the student sees it (no reasons or internal notes). */
+    public record RefundView(long amountMinor, OffsetDateTime refundedAt) {
     }
 
     /** Polled by the return page: the result comes from the provider's notification, never from the browser. */
-    @GetMapping("/checkout/{transactionId}")
+    /** The student's own payments, newest first (at most 100), with refunds; for the payment history page. */
+    @GetMapping("/payments")
+    public List<PaymentView> myPayments() {
+        return payments.transactions(CurrentUser.id(), 100).stream().map(this::view).toList();
+    }
+
+        @GetMapping("/checkout/{transactionId}")
     public PaymentView status(@PathVariable UUID transactionId) {
         Transaction tx = payments.transaction(transactionId).filter(t -> t.studentId().equals(CurrentUser.id()))
                 .orElseThrow(() -> new ApiException(ProblemCode.NOT_FOUND, "Payment not found."));
@@ -184,10 +198,13 @@ public class SubscriptionController {
 
     private PaymentView view(Transaction tx) {
         var period = payments.periodFor(tx.id()).orElse(null);
+        List<RefundView> done = refunds.forTransaction(tx.id()).stream().filter(r -> "SUCCEEDED".equals(r.status()))
+                .map(r -> new RefundView(r.amountMinor(), r.updatedAt())).toList();
         String reason = "CHARGEDBACK".equals(tx.failureReason()) || "NOT_COMPLETED".equals(tx.failureReason())
                 ? tx.failureReason() : null;
         return new PaymentView(tx.id(), tx.planName(), tx.durationMonths(), tx.amountMinor(), tx.currency(),
                 tx.provider(), tx.status(), reason, tx.createdAt(), period == null ? null : period.startsAt(),
-                period == null ? null : period.endsAt(), tx.discountMinor());
+                period == null ? null : period.endsAt(), tx.discountMinor(), tx.providerRef(), tx.listPriceMinor(),
+                done.stream().mapToLong(RefundView::amountMinor).sum(), done);
     }
 }
