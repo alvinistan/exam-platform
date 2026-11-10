@@ -75,6 +75,9 @@ paths:
       operationId: listPlans
       summary: Plans on sale
       security: [{}, { bearerAuth: [] }]
+      parameters:
+        - { name: examId, in: query, required: false, description: Only plans that include this exam., schema: { type: string, format: uuid } }
+        - { name: categoryId, in: query, required: false, description: 'Only plans grouped under this category (bundles).', schema: { type: string, format: uuid } }
       responses:
         '200':
           description: Active plans in display order, and which payment provider is configured.
@@ -93,7 +96,7 @@ paths:
     get:
       tags: [Plans]
       operationId: getMySubscription
-      summary: My Premium status, subscription periods and recent payments
+      summary: My active plans with attempts left, subscription periods and recent payments
       responses:
         '200':
           description: Computed at request time.
@@ -101,10 +104,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [premium, periods, payments]
+                required: [premium, plans, periods, payments]
                 properties:
-                  premium: { type: boolean }
-                  premiumEndsAt: { type: [string, 'null'], format: date-time, description: 'End of the latest Premium (bought or given), including renewals that start later.' }
+                  premium: { type: boolean, description: At least one plan is active. }
+                  plans: { type: array, items: { $ref: '#/components/schemas/ActivePlan' } }
+                  premiumEndsAt: { type: [string, 'null'], format: date-time, description: 'When the last active plan ends.' }
                   periods: { type: array, items: { $ref: '#/components/schemas/SubscriptionPeriod' } }
                   payments: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Payment' } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
@@ -128,6 +132,7 @@ paths:
               required: [planId, customer]
               properties:
                 planId: { type: string, format: uuid }
+                currency: { type: string, enum: [LKR, USD], default: LKR, description: The plan must have a price in this currency. }
                 customer:
                   type: object
                   description: Buyer details PayHere requires on its form. Passed through, not stored.
@@ -273,6 +278,18 @@ paths:
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/billing/plans/{planId}:
+    delete:
+      tags: [Admin billing]
+      operationId: deletePlan
+      summary: Delete a plan nobody has paid for (audited)
+      parameters:
+        - { name: planId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: 'Students have paid for it: hide it instead (CONFLICT).', content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
     put:
       tags: [Admin billing]
       operationId: updatePlan
@@ -391,8 +408,9 @@ paths:
                   bank: { type: string, enum: [MAIN], description: Free attempts and Premium both use the Main bank. }
                   reason:
                     type: string
-                    enum: [ACTIVE_ENTITLEMENT, FREE_ATTEMPT, FREE_ATTEMPTS_USED, SUBSCRIPTION_REQUIRED, MODE_NOT_AVAILABLE, EXAM_UNAVAILABLE]
-                  attemptsLeft: { type: [integer, 'null'], description: Free attempts left after this start; null for Premium. }
+                    enum: [ACTIVE_ENTITLEMENT, PLAN_ATTEMPT, FREE_ATTEMPT, PLAN_ATTEMPTS_USED, FREE_ATTEMPTS_USED, SUBSCRIPTION_REQUIRED, MODE_NOT_AVAILABLE, EXAM_UNAVAILABLE]
+                    description: 'Order of use: an unlimited plan (ACTIVE_ENTITLEMENT), the limited plan ending soonest (PLAN_ATTEMPT), then a free attempt.'
+                  attemptsLeft: { type: [integer, 'null'], description: 'Plan or free attempts of that kind left after this start; null for an unlimited plan or a retried start.' }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
 components:
@@ -402,43 +420,105 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Limits:
+      type: object
+      description: 'Attempts per exam type, per exam, for the length of a plan. null = unlimited, 0 = not included.'
+      properties:
+        practice: { type: [integer, 'null'], minimum: 0 }
+        mock: { type: [integer, 'null'], minimum: 0 }
+        adaptive: { type: [integer, 'null'], minimum: 0 }
     PublicPlan:
       type: object
-      required: [id, name, durationMonths, priceMinor, currency]
+      required: [id, name, scopeType, exams, durationMonths, limits]
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         description: { type: string }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        categoryId: { type: [string, 'null'], format: uuid }
+        exams:
+          type: array
+          description: The published exams covered (empty for ALL, which covers every exam).
+          items:
+            type: object
+            required: [examId, title, slug]
+            properties:
+              examId: { type: string, format: uuid }
+              title: { type: string }
+              slug: { type: string }
         durationMonths: { type: integer, enum: [1, 3, 6, 12] }
-        priceMinor: { type: integer, description: 'Price in the currency''s smallest unit (450000 = LKR 4,500.00).' }
-        currency: { type: string, enum: [LKR, USD] }
+        priceLkrMinor: { type: [integer, 'null'], description: 'LKR price in cents (300000 = LKR 3,000.00); null = not sold in LKR.' }
+        priceUsdMinor: { type: [integer, 'null'], description: 'USD price in cents; null = not sold in USD.' }
+        limits: { $ref: '#/components/schemas/Limits' }
     Plan:
       type: object
-      required: [id, code, name, durationMonths, priceMinor, currency, active, displayOrder, version]
+      required: [id, code, name, scopeType, examIds, durationMonths, limits, active, displayOrder, version]
       properties:
         id: { type: string, format: uuid }
         code: { type: string }
         name: { type: string }
         description: { type: string }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        categoryId: { type: [string, 'null'], format: uuid }
+        examIds: { type: array, items: { type: string, format: uuid } }
         durationMonths: { type: integer, enum: [1, 3, 6, 12] }
-        priceMinor: { type: integer, description: 'Price in the currency''s smallest unit.' }
-        currency: { type: string, enum: [LKR, USD] }
+        priceLkrMinor: { type: [integer, 'null'] }
+        priceUsdMinor: { type: [integer, 'null'] }
+        limits: { $ref: '#/components/schemas/Limits' }
         active: { type: boolean }
         displayOrder: { type: integer }
         version: { type: integer, description: Send as If-Match when saving. }
         updatedAt: { type: string, format: date-time }
     PlanInput:
       type: object
-      required: [name, durationMonths, priceMinor, currency]
+      required: [name, scopeType, durationMonths]
+      description: At least one price, and at least one exam type included.
       properties:
         code: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,39}$', description: Required when creating; can't change. }
         name: { type: string, minLength: 2, maxLength: 80 }
         description: { type: string, maxLength: 500 }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL], description: 'EXAM: exactly one exam. BUNDLE: a fixed list of 2–100 exams. ALL: every exam.' }
+        categoryId: { type: [string, 'null'], format: uuid, description: 'Groups a plan on the Pricing page; ignored for ALL.' }
+        examIds: { type: array, items: { type: string, format: uuid } }
         durationMonths: { type: integer, enum: [1, 3, 6, 12] }
-        priceMinor: { type: integer, minimum: 100, maximum: 10000000000 }
-        currency: { type: string, enum: [LKR, USD] }
+        priceLkrMinor: { type: [integer, 'null'], minimum: 100, maximum: 10000000000 }
+        priceUsdMinor: { type: [integer, 'null'], minimum: 100, maximum: 10000000000 }
+        practiceLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000, description: 'null = unlimited, 0 = not included.' }
+        mockLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+        adaptiveLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
         active: { type: boolean }
         displayOrder: { type: integer, minimum: 0, maximum: 1000 }
+    ActivePlan:
+      type: object
+      required: [id, name, source, scopeType, limits, startsAt, endsAt, exams]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        source: { type: string, enum: [SUBSCRIPTION, MANUAL] }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        limits: { $ref: '#/components/schemas/Limits' }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        exams:
+          type: array
+          description: 'The exams covered, with use per exam type (for ALL: only exams already used under this plan).'
+          items:
+            type: object
+            required: [examId, title, slug, modes]
+            properties:
+              examId: { type: string, format: uuid }
+              title: { type: string }
+              slug: { type: string }
+              modes:
+                type: array
+                items:
+                  type: object
+                  required: [mode, used]
+                  properties:
+                    mode: { type: string, enum: [PRACTICE, MOCK, USER_FRIENDLY] }
+                    limit: { type: [integer, 'null'], description: null = unlimited. }
+                    used: { type: integer }
+                    left: { type: [integer, 'null'] }
     SubscriptionPeriod:
       type: object
       required: [id, planName, status, startsAt, endsAt]

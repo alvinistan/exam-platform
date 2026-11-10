@@ -175,8 +175,10 @@ subscription-service decides access on every request (ADR-007); nothing is cache
 
 ## Payments (Phase 11)
 
-Students buy Premium on `/plans`; administrators set plans and see payments in **Administration → Plans & payments**
-(1, 3, 6 or 12 months, priced in LKR or USD; a price change applies to new payments only).
+Students buy plans on `/plans`; administrators set plans and see payments in **Administration → Plans & payments**.
+A plan covers one exam, a bundle of exams, or everything; lasts 1, 3, 6 or 12 months; has an LKR and/or USD price;
+and sets Practice, Mock and Adaptive attempts (unlimited, a number per exam, or not included). Changes apply to new
+payments only.
 
 - **Out of the box** `PAYMENT_PROVIDER=TEST`: choosing a plan opens a clearly labelled test page where no money moves.
   It is refused when the `prod` profile is active.

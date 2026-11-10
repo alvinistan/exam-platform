@@ -12,6 +12,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,7 +67,8 @@ abstract class PaymentTestSupport {
 
     @BeforeEach
     void cleanBilling() {
-        jdbc.update("TRUNCATE webhook_event, outbox_event");
+        jdbc.update("TRUNCATE webhook_event, outbox_event, exam_view, free_attempt_use");
+        jdbc.update("TRUNCATE entitlement_use");
         jdbc.update("DELETE FROM entitlement");
         jdbc.update("DELETE FROM subscription");
         jdbc.update("DELETE FROM payment_transaction");
@@ -92,18 +94,53 @@ abstract class PaymentTestSupport {
         return JsonPath.read(r.getContentAsString(), path);
     }
 
-    /** Creates a plan through the admin API and returns its id. */
+    static final String DECIDER = TestTokens.builder().subject("assessment-service")
+            .roles(com.leenex.exam.platform.security.PlatformJwt.ROLE_SERVICE).scope("billing.access").build();
+
+    /** A plan covering everything, unlimited, priced in one currency, created through the admin API; returns its id. */
     String plan(String code, int months, long priceMinor, String currency, boolean active) throws Exception {
+        return plan(planBody(code, months, "LKR".equals(currency) ? priceMinor : null,
+                "USD".equals(currency) ? priceMinor : null, "ALL", List.of(), null, null, null, active));
+    }
+
+    String plan(Map<String, Object> body) throws Exception {
+        return read(expect(call(post("/api/admin/billing/plans"), ADMIN, body), 201), "$.id");
+    }
+
+    static Map<String, Object> planBody(String code, int months, Long lkr, Long usd, String scopeType, List<UUID> exams,
+                                        Integer practice, Integer mock, Integer adaptive, boolean active) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("code", code);
         body.put("name", months + " months");
-        body.put("description", "All Premium exams");
+        body.put("description", "Premium");
+        body.put("scopeType", scopeType);
+        body.put("examIds", exams.stream().map(UUID::toString).toList());
         body.put("durationMonths", months);
-        body.put("priceMinor", priceMinor);
-        body.put("currency", currency);
+        body.put("priceLkrMinor", lkr);
+        body.put("priceUsdMinor", usd);
+        body.put("practiceLimit", practice);
+        body.put("mockLimit", mock);
+        body.put("adaptiveLimit", adaptive);
         body.put("active", active);
         body.put("displayOrder", months);
-        return read(expect(call(post("/api/admin/billing/plans"), ADMIN, body), 201), "$.id");
+        return body;
+    }
+
+    /** Publishes an exam straight into the read model: all three modes on, Practice 3, Mock 1, Adaptive 3 free. */
+    UUID exam(String title, UUID category) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO exam_view (exam_id, category_id, title, slug, display_order, status, published_at, "
+                + "modes, free_attempts) VALUES (?, ?, ?, ?, 1, 'PUBLISHED', now(), '{PRACTICE,MOCK,USER_FRIENDLY}', "
+                + "'{\"PRACTICE\": 3, \"MOCK\": 1, \"USER_FRIENDLY\": 3}')", id, category, title,
+                title.toLowerCase().replace(' ', '-'));
+        return id;
+    }
+
+    /** Asks for an access decision the way assessment-service does, counting the attempt. */
+    MockHttpServletResponse start(UUID student, UUID exam, String mode) throws Exception {
+        return expect(call(post("/internal/access-decisions"), DECIDER, Map.of("studentId", student.toString(),
+                "examId", exam.toString(), "mode", mode, "consume", true, "attemptId", UUID.randomUUID().toString())),
+                200);
     }
 
     static Map<String, Object> customer() {

@@ -43,14 +43,17 @@ public class AccessClient {
     public static ApiException refusal(Decision decision, String modeLabel) {
         return switch (decision.reason()) {
             case "FREE_ATTEMPTS_USED" -> new ApiException(ProblemCode.FREE_ALLOWANCE_USED,
-                    "You've used your free " + modeLabel + " attempts for this exam. Premium gives you unlimited attempts.",
+                    "You've used your free " + modeLabel + " attempts for this exam. A plan gives you more.",
+                    Map.of("reason", decision.reason()));
+            case "PLAN_ATTEMPTS_USED" -> new ApiException(ProblemCode.FREE_ALLOWANCE_USED,
+                    "You've used all the " + modeLabel + " attempts in your plan for this exam.",
                     Map.of("reason", decision.reason()));
             case "MODE_NOT_AVAILABLE" -> new ApiException(ProblemCode.MODE_DISABLED,
                     modeLabel + " isn't available for this exam.");
             case "EXAM_UNAVAILABLE" -> new ApiException(ProblemCode.EXAM_UNAVAILABLE,
                     "This exam isn't available at the moment.");
             default -> new ApiException(ProblemCode.SUBSCRIPTION_REQUIRED,
-                    modeLabel + " on this exam needs Premium.", Map.of("reason", decision.reason()));
+                    modeLabel + " on this exam needs a plan.", Map.of("reason", decision.reason()));
         };
     }
 }

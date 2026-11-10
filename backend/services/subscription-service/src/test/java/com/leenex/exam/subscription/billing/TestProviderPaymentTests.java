@@ -33,23 +33,33 @@ class TestProviderPaymentTests extends PaymentTestSupport {
         assertThat((String) read(publicPlans, "$.provider")).isEqualTo("TEST");
         assertThat((Boolean) read(publicPlans, "$.testPayments")).isTrue();
         assertThat((List<String>) read(publicPlans, "$.plans[*].id")).containsExactly(month);
-        assertThat((Integer) read(publicPlans, "$.plans[0].priceMinor")).isEqualTo(150000);
+        assertThat((Integer) read(publicPlans, "$.plans[0].priceLkrMinor")).isEqualTo(150000);
+        assertThat((Object) read(publicPlans, "$.plans[0].priceUsdMinor")).isNull();
+        assertThat((String) read(publicPlans, "$.plans[0].scopeType")).isEqualTo("ALL");
 
-        Map<String, Object> change = Map.of("name", "Monthly", "description", "", "durationMonths", 1,
-                "priceMinor", 175000, "currency", "LKR", "active", true, "displayOrder", 1);
+        Map<String, Object> change = planBody(null, 1, 175000L, 600L, "ALL", List.of(), null, null, null, true);
+        change.put("name", "Monthly");
         expect(call(put("/api/admin/billing/plans/" + month), ADMIN, change), 400); // no If-Match
         expect(call(put("/api/admin/billing/plans/" + month).header("If-Match", "\"0\""), ADMIN, change), 200);
         expect(call(put("/api/admin/billing/plans/" + month).header("If-Match", "\"0\""), ADMIN, change), 409);
-        assertThat((Integer) read(expect(call(get("/api/plans"), null, null), 200), "$.plans[0].priceMinor")).isEqualTo(175000);
+        MockHttpServletResponse changed = expect(call(get("/api/plans"), null, null), 200);
+        assertThat((Integer) read(changed, "$.plans[0].priceLkrMinor")).isEqualTo(175000);
+        assertThat((Integer) read(changed, "$.plans[0].priceUsdMinor")).isEqualTo(600);
 
         Map<String, Object> bad = new java.util.HashMap<>(change);
         bad.put("code", "two-months");
         bad.put("durationMonths", 2);
         expect(call(post("/api/admin/billing/plans"), ADMIN, bad), 400);
         bad.put("durationMonths", 3);
-        bad.put("currency", "EUR");
-        expect(call(post("/api/admin/billing/plans"), ADMIN, bad), 400);
-        bad.put("currency", "USD");
+        bad.put("priceLkrMinor", null);
+        bad.put("priceUsdMinor", null);
+        expect(call(post("/api/admin/billing/plans"), ADMIN, bad), 400); // no price
+        bad.put("priceUsdMinor", 1500);
+        bad.put("practiceLimit", 0);
+        bad.put("mockLimit", 0);
+        bad.put("adaptiveLimit", 0);
+        expect(call(post("/api/admin/billing/plans"), ADMIN, bad), 400); // nothing included
+        bad.put("practiceLimit", null);
         bad.put("code", "one-month");
         expect(call(post("/api/admin/billing/plans"), ADMIN, bad), 400); // code taken
         expect(call(post("/api/admin/billing/plans"), student, bad), 403);
@@ -98,7 +108,7 @@ class TestProviderPaymentTests extends PaymentTestSupport {
     }
 
     @Test
-    void aRenewalStartsWhenTheCurrentPremiumEnds() throws Exception {
+    void aSecondPlanStartsStraightAwayAlongsideTheFirst() throws Exception {
         String planId = plan("three-months", 3, 400000, "LKR", true);
         String first = read(expect(checkout(student, planId, "renew-00001"), 201), "$.transactionId");
         expect(pay(student, first, "SUCCEEDED"), 200);
@@ -108,10 +118,12 @@ class TestProviderPaymentTests extends PaymentTestSupport {
         List<Map<String, Object>> periods = jdbc.queryForList(
                 "SELECT starts_at, ends_at FROM subscription WHERE student_id = ? ORDER BY starts_at", studentId);
         assertThat(periods).hasSize(2);
-        assertThat(periods.get(1).get("starts_at")).isEqualTo(periods.get(0).get("ends_at"));
-        OffsetDateTime ends = OffsetDateTime.parse(read(expect(call(get("/api/subscriptions/me"), student, null), 200),
-                "$.premiumEndsAt"));
-        assertThat(ends).isAfter(OffsetDateTime.now().plusMonths(5).plusDays(25));
+        assertThat(((java.sql.Timestamp) periods.get(1).get("starts_at")).toInstant())
+                .isBefore(((java.sql.Timestamp) periods.get(0).get("ends_at")).toInstant());
+        MockHttpServletResponse mine = expect(call(get("/api/subscriptions/me"), student, null), 200);
+        OffsetDateTime ends = OffsetDateTime.parse(read(mine, "$.premiumEndsAt"));
+        assertThat(ends).isBetween(OffsetDateTime.now().plusMonths(3).minusDays(2), OffsetDateTime.now().plusMonths(3).plusDays(2));
+        assertThat((List<?>) read(mine, "$.plans")).hasSize(2);
     }
 
     @Test

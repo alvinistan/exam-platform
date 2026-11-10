@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api/client';
-import type { PaymentStatus } from '@/features/billing/api';
+import type { Limits, PaymentStatus, ScopeType } from '@/features/billing/api';
+import type { AdminExam } from '@/features/admin/catalog/api';
 
 /** contracts/openapi/subscription-service.yaml → Plan. */
 export interface AdminPlan {
@@ -8,9 +9,13 @@ export interface AdminPlan {
   code: string;
   name: string;
   description: string;
+  scopeType: ScopeType;
+  categoryId: string | null;
+  examIds: string[];
   durationMonths: 1 | 3 | 6 | 12;
-  priceMinor: number;
-  currency: 'LKR' | 'USD';
+  priceLkrMinor: number | null;
+  priceUsdMinor: number | null;
+  limits: Limits;
   active: boolean;
   displayOrder: number;
   version: number;
@@ -21,9 +26,16 @@ export interface PlanInput {
   code?: string;
   name: string;
   description: string;
+  scopeType: ScopeType;
+  categoryId: string | null;
+  examIds: string[];
   durationMonths: number;
-  priceMinor: number;
-  currency: 'LKR' | 'USD';
+  priceLkrMinor: number | null;
+  priceUsdMinor: number | null;
+  /** null = unlimited, 0 = not included. */
+  practiceLimit: number | null;
+  mockLimit: number | null;
+  adaptiveLimit: number | null;
   active: boolean;
   displayOrder: number;
 }
@@ -64,6 +76,17 @@ export function useAdminPayments() {
     queryFn: ({ signal }) => apiFetch<AdminPayment[]>('/admin/billing/payments', { signal }),
   });
 }
+
+/** Every exam an administrator can put in a plan (drafts too, so plans can be prepared before publishing). */
+export function usePlanExams() {
+  return useQuery({
+    queryKey: [...billingAdminKeys.all, 'exams'],
+    queryFn: ({ signal }) => apiFetch<{ items: AdminExam[] }>('/admin/catalog/exams', { signal, query: { page: 0, size: 100 } }),
+    select: (d) => d.items.filter((e) => e.status !== 'ARCHIVED'),
+  });
+}
+
+export const deletePlan = (plan: AdminPlan) => apiFetch<undefined>(`/admin/billing/plans/${plan.id}`, { method: 'DELETE' });
 
 export const createPlan = (input: PlanInput) => apiFetch<AdminPlan>('/admin/billing/plans', { method: 'POST', json: input });
 

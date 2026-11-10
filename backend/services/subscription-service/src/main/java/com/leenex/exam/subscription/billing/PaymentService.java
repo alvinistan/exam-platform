@@ -17,6 +17,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -73,26 +74,48 @@ public class PaymentService {
     }
 
     @Transactional
-    public Checkout checkout(UUID studentId, UUID planId, String idempotencyKey, Customer customer) {
+    public Checkout checkout(UUID studentId, UUID planId, String currency, String idempotencyKey, Customer customer) {
         Transaction tx = payments.byKey(studentId, idempotencyKey).orElse(null);
         if (tx == null) {
             Plans.Plan plan = plans.find(planId).filter(Plans.Plan::active)
                     .orElseThrow(() -> new ApiException(ProblemCode.NOT_FOUND, "This plan isn't available."));
+            Long price = plan.priceMinor(currency);
+            if (price == null) {
+                throw new ApiException(ProblemCode.VALIDATION_FAILED, "This plan can't be paid in " + currency + ".");
+            }
             UUID id = UuidV7.generate();
-            if (!payments.insertTransaction(id, studentId, plan, provider(), idempotencyKey, plan.priceMinor(),
-                    plan.currency())) {
+            if (!payments.insertTransaction(id, studentId, plan, provider(), idempotencyKey, price, currency,
+                    json.writeValueAsString(Snapshot.of(plan)))) {
                 // The same request arrived twice at once; the other one created it.
                 tx = payments.byKey(studentId, idempotencyKey).orElseThrow();
                 return checkoutFor(tx, customer);
             }
             tx = payments.transaction(id).orElseThrow();
             audit.record(studentId, "CHECKOUT_STARTED", "PAYMENT", id,
-                    Map.of("plan", plan.code(), "amountMinor", plan.priceMinor(), "currency", plan.currency(),
-                            "provider", provider()));
+                    Map.of("plan", plan.code(), "amountMinor", price, "currency", currency, "provider", provider()));
         } else if (!tx.planId().equals(planId)) {
             throw new ApiException(ProblemCode.CONFLICT, "This request key was already used for a different plan.");
         }
         return checkoutFor(tx, customer);
+    }
+
+    /**
+     * What was bought, frozen at checkout: activation uses this, never the plan as it is later (an administrator may
+     * change the plan while the payment is in flight).
+     */
+    public record Snapshot(String scopeType, List<UUID> examIds, Plans.Limits limits, int durationMonths) {
+
+        static Snapshot of(Plans.Plan plan) {
+            return new Snapshot(plan.scopeType(), plan.examIds(), plan.limits(), plan.durationMonths());
+        }
+    }
+
+    private Snapshot snapshot(Transaction tx) {
+        if (tx.planSnapshot() == null) {
+            // Payments made before Phase 11B bought everything, without limits.
+            return new Snapshot("ALL", List.of(), Plans.Limits.UNLIMITED, tx.durationMonths());
+        }
+        return json.readValue(tx.planSnapshot(), Snapshot.class);
     }
 
     private Checkout checkoutFor(Transaction tx, Customer customer) {
@@ -202,14 +225,15 @@ public class PaymentService {
         if ("SUCCEEDED".equals(tx.status()) || "CHARGEDBACK".equals(tx.failureReason())) {
             return "IGNORED";
         }
-        OffsetDateTime now = OffsetDateTime.ofInstant(clock.instant().truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
-        // A renewal starts when the current Premium ends, so no paid time is lost (SB-4).
-        OffsetDateTime start = payments.premiumEndsAfter(tx.studentId(), now).filter(e -> e.isAfter(now)).orElse(now);
-        OffsetDateTime end = start.plusMonths(tx.durationMonths());
+        // Phase 11B: a plan starts straight away; plans held at the same time add up (the soonest-ending is used first).
+        OffsetDateTime start = OffsetDateTime.ofInstant(clock.instant().truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
+        Snapshot bought = snapshot(tx);
+        OffsetDateTime end = start.plusMonths(bought.durationMonths());
         UUID periodId = UuidV7.generate();
         payments.setStatus(tx.id(), "SUCCEEDED", n.paymentRef(), null);
         payments.insertPeriod(periodId, tx.studentId(), tx.planId(), tx.id(), start, end);
-        payments.insertSubscriptionEntitlement(UuidV7.generate(), tx.studentId(), periodId, start, end);
+        payments.insertSubscriptionEntitlement(UuidV7.generate(), tx.studentId(), periodId, start, end, tx.planName(),
+                bought.scopeType(), bought.examIds(), bought.limits());
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("subscriptionId", periodId.toString());
         event.put("studentId", tx.studentId().toString());

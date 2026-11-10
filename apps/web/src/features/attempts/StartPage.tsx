@@ -123,9 +123,13 @@ function StartForm({ exam, settings }: { exam: ExamDetail; settings: PublicModeS
         <p className="text-muted">{intro[mode]}</p>
         {modeAccess && (
           <p className="flex flex-wrap items-center gap-2 text-[14.5px]">
-            <Badge tone={modeAccess.access === 'LOCKED' ? 'premium' : modeAccess.access === 'OPEN' ? 'premium' : 'free'}>
+            <Badge tone={modeAccess.access === 'FREE' ? 'free' : 'premium'}>
               {modeAccess.access === 'LOCKED' && <Lock aria-hidden="true" className="size-3.5" />}
-              {modeAccess.access === 'OPEN' ? 'Premium' : modeAccess.access === 'FREE' ? 'Free' : 'Premium needed'}
+              {modeAccess.access === 'OPEN' || modeAccess.access === 'PLAN'
+                ? 'Your plan'
+                : modeAccess.access === 'FREE'
+                  ? 'Free'
+                  : 'Plan needed'}
             </Badge>
             <span className="text-ink-2">{describeModeAccess(modeAccess)}</span>
           </p>

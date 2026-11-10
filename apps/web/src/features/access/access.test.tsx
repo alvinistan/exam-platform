@@ -84,7 +84,7 @@ describe('free attempts for students', () => {
     expect(within(practice).getByRole('link', { name: 'Start' })).toHaveAttribute('href', '/exams/nursing-licensure/start/practice');
     const mock = screen.getByRole('heading', { level: 3, name: 'Mock exam' }).closest('li') as HTMLElement;
     expect(within(mock).getByText('Free attempts used (1 of 1)')).toBeInTheDocument();
-    expect(within(mock).getByRole('button', { name: 'Needs Premium' })).toBeDisabled();
+    expect(within(mock).getByRole('button', { name: 'Needs a plan' })).toBeDisabled();
     expect(within(mock).getByText('Premium')).toBeInTheDocument();
   });
 
@@ -97,19 +97,49 @@ describe('free attempts for students', () => {
     });
     renderRoute('/exams/nursing-licensure');
     expect(await screen.findByRole('region', { name: 'You’ve used your free attempts' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'See Premium plans' })).toHaveAttribute('href', '/plans');
+    expect(screen.getByRole('link', { name: 'See plans for this exam' })).toHaveAttribute('href', `/plans?exam=${FREE_ID}`);
   });
 
   it('shows the student’s plan on their account page', async () => {
     mockApi({
       ...signedIn(),
       'GET /api/subscriptions/me': () =>
-        jsonResponse({ premium: true, premiumEndsAt: '2026-12-31T18:29:59Z', periods: [], payments: [] }),
+        jsonResponse({
+          premium: true,
+          premiumEndsAt: '2026-12-31T18:29:59Z',
+          plans: [
+            {
+              id: 'e1',
+              name: 'Science – 1 month',
+              source: 'SUBSCRIPTION',
+              scopeType: 'EXAM',
+              limits: { practice: null, mock: 8, adaptive: 0 },
+              startsAt: '2026-12-01T18:29:59Z',
+              endsAt: '2026-12-31T18:29:59Z',
+              exams: [
+                {
+                  examId: 'x1',
+                  title: 'Science',
+                  slug: 'ol-science',
+                  modes: [
+                    { mode: 'PRACTICE', limit: null, used: 4, left: null },
+                    { mode: 'MOCK', limit: 8, used: 2, left: 6 },
+                  ],
+                },
+              ],
+            },
+          ],
+          periods: [],
+          payments: [],
+        }),
     });
     renderRoute('/account');
     expect(await screen.findByRole('heading', { name: 'Your plan' })).toBeInTheDocument();
-    expect(await screen.findByText(/Unlimited attempts on every exam until/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Add more time' })).toHaveAttribute('href', '/plans');
+    expect(await screen.findByText('Science – 1 month')).toBeInTheDocument();
+    expect(screen.getByText(/Until/)).toBeInTheDocument();
+    expect(screen.getByText('Practice: unlimited · Mock: 6 of 8 left')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Science' })).toHaveAttribute('href', '/exams/ol-science');
+    expect(screen.getByRole('link', { name: 'Get another plan' })).toHaveAttribute('href', '/plans');
   });
 });
 

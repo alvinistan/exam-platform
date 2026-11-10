@@ -94,11 +94,12 @@ components:
       type: object
       description: >-
         The caller's access to an exam, decided by subscription-service. Each switched-on exam type has its own free
-        attempts; once they are used, that type is locked until the student has Premium.
+        attempts; the caller's plans add unlimited attempts or a number per exam (Phase 11B). When both are used up,
+        that type is locked.
       required: [available, premium, modes]
       properties:
         available: { type: boolean, description: 'False when the exam is unknown, a draft or archived.' }
-        premium: { type: boolean, description: The caller has an active entitlement. }
+        premium: { type: boolean, description: One of the caller's active plans covers this exam. }
         modes:
           type: array
           items:
@@ -106,10 +107,14 @@ components:
             required: [mode, access, freeAttempts]
             properties:
               mode: { $ref: '#/components/schemas/Mode' }
-              access: { type: string, enum: [OPEN, FREE, LOCKED], description: 'OPEN: Premium. FREE: free attempts left.' }
+              access:
+                type: string
+                enum: [OPEN, PLAN, FREE, LOCKED]
+                description: 'OPEN: an unlimited plan. PLAN: plan attempts left (planLeft). FREE: free attempts left.'
               freeAttempts: { type: integer, minimum: 0 }
-              used: { type: [integer, 'null'], description: Null for anonymous visitors and Premium students. }
-              left: { type: [integer, 'null'] }
+              used: { type: [integer, 'null'], description: Free attempts used; null for anonymous visitors. }
+              left: { type: [integer, 'null'], description: Free attempts left; null for anonymous visitors. }
+              planLeft: { type: [integer, 'null'], description: 'Attempts left in the caller''s limited plans for this exam type; null when no plan includes it.' }
     SetupIssue:
       type: object
       required: [step, message]

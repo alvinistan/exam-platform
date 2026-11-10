@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
@@ -9,7 +9,19 @@ import { Alert, Button, Card, EmptyState, ErrorState, Skeleton, TextField } from
 import { ApiError } from '@/lib/api/problem';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { TestModeNotice } from './PlansPage';
-import { formatPrice, monthsLabel, startCheckout, submitToProvider, usePlans, type Checkout, type Customer } from './api';
+import {
+  describeLimits,
+  describeScope,
+  formatPrice,
+  monthsLabel,
+  priceIn,
+  startCheckout,
+  submitToProvider,
+  usePlans,
+  type Checkout,
+  type Currency,
+  type Customer,
+} from './api';
 
 const required = (max: number) => z.string().trim().min(1, 'Required.').max(max, `Use ${max} characters or fewer.`);
 
@@ -32,7 +44,12 @@ const schema = z.object({
  */
 export function CheckoutPage() {
   const { planId = '' } = useParams();
+  const [params] = useSearchParams();
+  const asked: Currency = params.get('currency') === 'USD' ? 'USD' : 'LKR';
   const plans = usePlans();
+  const found = plans.data?.plans.find((p) => p.id === planId);
+  // Use the currency asked for when the plan is sold in it; otherwise the one it is sold in.
+  const currency: Currency = found && priceIn(found, asked) === null ? (asked === 'LKR' ? 'USD' : 'LKR') : asked;
   const { state } = useAuth();
   const navigate = useNavigate();
   // One key for this visit: pressing Pay twice, or retrying after a network error, never creates two payments.
@@ -54,7 +71,7 @@ export function CheckoutPage() {
   });
 
   const go = useMutation({
-    mutationFn: (customer: Customer) => startCheckout(planId, idempotencyKey, customer),
+    mutationFn: (customer: Customer) => startCheckout(planId, currency, idempotencyKey, customer),
     onSuccess: (checkout: Checkout) => {
       if (checkout.provider === 'TEST') {
         void navigate(`/checkout/test/${checkout.transactionId}`);
@@ -79,7 +96,7 @@ export function CheckoutPage() {
     );
   }
   const plan = plans.data.plans.find((p) => p.id === planId);
-  if (!plan) {
+  if (!plan || (plan.priceLkrMinor === null && plan.priceUsdMinor === null)) {
     return (
       <Shell>
         <EmptyState
@@ -97,6 +114,7 @@ export function CheckoutPage() {
   }
 
   const errors = form.formState.errors;
+  const price = priceIn(plan, currency) ?? 0;
   const submitting = go.isPending || go.isSuccess;
   return (
     <Shell>
@@ -156,20 +174,28 @@ export function CheckoutPage() {
                 ? 'Opening the payment page…'
                 : plans.data.testPayments
                   ? 'Continue to the test payment'
-                  : `Pay ${formatPrice(plan.priceMinor, plan.currency)} with PayHere`}
+                  : `Pay ${formatPrice(price, currency)} with PayHere`}
             </Button>
           </form>
         </Card>
         <Card className="flex flex-col gap-3 p-6">
           <h2 className="text-[13px] font-bold tracking-wider text-muted uppercase">Order</h2>
           <p className="text-lg font-bold">{plan.name}</p>
-          <p className="text-ink-2">Premium on every exam for {monthsLabel(plan.durationMonths)}.</p>
+          <p className="text-ink-2">
+            {describeScope(plan)} · {monthsLabel(plan.durationMonths)}
+          </p>
+          <ul className="flex flex-col gap-1 text-[14px] text-ink-2">
+            {describeLimits(plan.limits).map((line) => (
+              <li key={line}>{plan.scopeType === 'BUNDLE' ? `${line} per subject` : line}</li>
+            ))}
+          </ul>
           <p className="flex items-baseline justify-between border-t border-border pt-3">
             <span className="text-muted">Total</span>
-            <span className="text-xl font-extrabold tabular-nums">{formatPrice(plan.priceMinor, plan.currency)}</span>
+            <span className="text-xl font-extrabold tabular-nums">{formatPrice(price, currency)}</span>
           </p>
           <p className="text-[13px] text-muted">
-            One payment, no automatic renewal. If you already have Premium, this plan starts when it ends.
+            One payment, no automatic renewal. The plan starts as soon as the payment is confirmed and adds to any plan you
+            already have.
           </p>
         </Card>
       </div>

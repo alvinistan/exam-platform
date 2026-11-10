@@ -3,14 +3,19 @@ import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/AuthContext';
 import type { Mode } from '@/features/exams/api';
 
-/** One exam type for the caller. OPEN: Premium. FREE: free attempts left (or would be, for a visitor). */
+/**
+ * One exam type for the caller. OPEN: an unlimited plan. PLAN: attempts left in the caller's plans (planLeft). FREE:
+ * free attempts left (or would be, for a visitor). LOCKED: nothing left.
+ */
 export interface ModeAccess {
   mode: Mode;
-  access: 'OPEN' | 'FREE' | 'LOCKED';
+  access: 'OPEN' | 'PLAN' | 'FREE' | 'LOCKED';
   freeAttempts: number;
-  /** Null for anonymous visitors and Premium students. */
+  /** Free attempts used and left; null for anonymous visitors. */
   used: number | null;
   left: number | null;
+  /** Attempts left in the caller's limited plans; null when no plan includes this exam type. */
+  planLeft?: number | null;
 }
 
 /** contracts/openapi/common.yaml → AccessStatus. Decided by subscription-service on every request. */
@@ -60,15 +65,20 @@ export function useMyAccess() {
 export function examAccessSummary(status: AccessStatus | undefined): 'PREMIUM_OPEN' | 'FREE' | 'LOCKED' | null {
   if (!status || !status.available || status.modes.length === 0) return null;
   if (status.premium) return 'PREMIUM_OPEN';
-  return status.modes.some((m) => m.access === 'FREE') ? 'FREE' : 'LOCKED';
+  return status.modes.some((m) => m.access === 'FREE' || m.access === 'PLAN') ? 'FREE' : 'LOCKED';
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-/** Plain words for one exam type: "2 of 3 free attempts left", "Free attempts used", "Unlimited with Premium". */
+/** Plain words for one exam type: "2 of 3 free attempts left", "5 attempts left in your plan", "Unlimited with your plan". */
 export function describeModeAccess(m: ModeAccess): string {
-  if (m.access === 'OPEN') return 'Unlimited with your Premium access';
-  if (m.left === null) return m.freeAttempts > 0 ? `${plural(m.freeAttempts, 'free attempt')}` : 'Premium only';
+  if (m.access === 'OPEN') return 'Unlimited with your plan';
+  if (m.access === 'PLAN') {
+    const free = m.left ? ` + ${plural(m.left, 'free attempt')}` : '';
+    return `${plural(m.planLeft ?? 0, 'attempt')} left in your plan${free}`;
+  }
+  if (m.left === null) return m.freeAttempts > 0 ? `${plural(m.freeAttempts, 'free attempt')}` : 'Needs a plan';
   if (m.access === 'FREE') return `${m.left} of ${plural(m.freeAttempts, 'free attempt')} left`;
-  return m.freeAttempts > 0 ? `Free attempts used (${m.used ?? m.freeAttempts} of ${m.freeAttempts})` : 'Premium only';
+  if (m.planLeft === 0) return 'Attempts in your plan used';
+  return m.freeAttempts > 0 ? `Free attempts used (${m.used ?? m.freeAttempts} of ${m.freeAttempts})` : 'Needs a plan';
 }

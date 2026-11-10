@@ -40,3 +40,17 @@ The product owner chose **PayHere** (D8). How the decision is applied:
   profile; PAYHERE without merchant credentials, or live PayHere without an https `PUBLIC_BASE_URL`, also fails startup.
 - The provider "port" is kept deliberately small (checkout fields + verified `Notification`); a second provider would
   add one adapter and its own webhook endpoint.
+
+## Amendment — Phase 11B (9 Nov 2026): what a plan covers
+
+- **Plans** cover one exam, a fixed bundle of exams (grouped under a category for display), or every exam; carry an
+  LKR and/or a USD price; and set attempts per exam type, per exam: unlimited, a number, or not included.
+- **Frozen at checkout**: the payment stores a copy of the plan (scope, exam list, limits, length), and activation
+  copies it onto the entitlement. Later plan edits, and exams added to a category, never change what was bought.
+- **Plans start straight away** (replacing "renewals start when the current Premium ends"): plans held at the same
+  time add up.
+- **Which allowance pays for an attempt** (assessment-service asks subscription-service, as before): an unlimited plan
+  covering the exam; else the limited plan with attempts left that ends soonest; else a free attempt. Each attempt is
+  recorded once against one allowance (`entitlement_use` / `free_attempt_use`), so retries and parallel starts can't
+  overspend.
+- A plan with payments can't be deleted, only hidden.

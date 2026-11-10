@@ -13,7 +13,16 @@ import jakarta.validation.constraints.Size;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import com.leenex.exam.subscription.access.AccessRules;
+import com.leenex.exam.subscription.catalogfeed.ExamViewRepository;
+import com.leenex.exam.subscription.entitlement.EntitlementRepository;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,11 +41,16 @@ public class SubscriptionController {
 
     private final PaymentService service;
     private final Payments payments;
+    private final EntitlementRepository entitlements;
+    private final ExamViewRepository exams;
     private final Clock clock;
 
-    public SubscriptionController(PaymentService service, Payments payments, Clock clock) {
+    public SubscriptionController(PaymentService service, Payments payments, EntitlementRepository entitlements,
+                                  ExamViewRepository exams, Clock clock) {
         this.service = service;
         this.payments = payments;
+        this.entitlements = entitlements;
+        this.exams = exams;
         this.clock = clock;
     }
 
@@ -50,7 +64,10 @@ public class SubscriptionController {
             @NotBlank @Size(max = 50) String country) {
     }
 
-    public record CheckoutInput(@NotNull UUID planId, @NotNull @Valid CustomerInput customer) {
+    /** @param currency LKR or USD; defaults to LKR when the plan has an LKR price, otherwise USD */
+    public record CheckoutInput(@NotNull UUID planId,
+                                @Pattern(regexp = "LKR|USD", message = "must be LKR or USD") String currency,
+                                @NotNull @Valid CustomerInput customer) {
     }
 
     /**
@@ -64,7 +81,8 @@ public class SubscriptionController {
             throw new ApiException(ProblemCode.VALIDATION_FAILED, "Idempotency-Key header (8–100 letters, digits, - or _) is required.");
         }
         CustomerInput c = in.customer();
-        PaymentService.Checkout checkout = service.checkout(CurrentUser.id(), in.planId(), key,
+        PaymentService.Checkout checkout = service.checkout(CurrentUser.id(), in.planId(),
+                in.currency() == null ? "LKR" : in.currency(), key,
                 new PaymentService.Customer(c.firstName().strip(), c.lastName().strip(), c.email().strip(),
                         c.phone().strip(), c.address().strip(), c.city().strip(), c.country().strip()));
         return ResponseEntity.status(HttpStatus.CREATED).body(checkout);
@@ -83,8 +101,22 @@ public class SubscriptionController {
         return view(tx);
     }
 
-    public record Mine(boolean premium, OffsetDateTime premiumEndsAt, List<Payments.PeriodView> periods,
-                       List<PaymentView> payments) {
+    /** Attempts used and left in one exam type on one exam; {@code limit} and {@code left} are null when unlimited. */
+    public record ModeUse(String mode, Integer limit, int used, Integer left) {
+    }
+
+    public record ExamUse(UUID examId, String title, String slug, List<ModeUse> modes) {
+    }
+
+    /**
+     * One active plan. {@code exams}: what it covers (for scope ALL, only the exams already used under it).
+     */
+    public record ActivePlan(UUID id, String name, String source, String scopeType, Plans.Limits limits,
+                             OffsetDateTime startsAt, OffsetDateTime endsAt, List<ExamUse> exams) {
+    }
+
+    public record Mine(boolean premium, OffsetDateTime premiumEndsAt, List<ActivePlan> plans,
+                       List<Payments.PeriodView> periods, List<PaymentView> payments) {
     }
 
     @GetMapping("/me")
@@ -92,8 +124,41 @@ public class SubscriptionController {
         UUID me = CurrentUser.id();
         OffsetDateTime now = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
         OffsetDateTime ends = payments.premiumEndsAfter(me, now).orElse(null);
-        return new Mine(service.premiumNow(me, now), ends, payments.periodViews(me),
+        return new Mine(service.premiumNow(me, now), ends, activePlans(me), payments.periodViews(me),
                 payments.transactions(me, 10).stream().map(this::view).toList());
+    }
+
+    private List<ActivePlan> activePlans(UUID studentId) {
+        List<EntitlementRepository.Grant> grants = entitlements.activeGrants(studentId, clock.instant());
+        Map<EntitlementRepository.UseKey, Integer> usage = entitlements.usage(
+                grants.stream().map(EntitlementRepository.Grant::id).toList());
+        Set<UUID> examIds = new LinkedHashSet<>();
+        grants.forEach(g -> examIds.addAll(g.examIds()));
+        usage.keySet().forEach(k -> examIds.add(k.examId()));
+        Map<UUID, ExamViewRepository.ExamView> views = exams.find(List.copyOf(examIds)).stream()
+                .collect(Collectors.toMap(ExamViewRepository.ExamView::examId, Function.identity()));
+        List<ActivePlan> result = new ArrayList<>();
+        for (EntitlementRepository.Grant g : grants) {
+            List<UUID> shown = "ALL".equals(g.scopeType())
+                    ? usage.keySet().stream().filter(k -> k.entitlementId().equals(g.id()))
+                            .map(EntitlementRepository.UseKey::examId).distinct().toList()
+                    : g.examIds();
+            List<ExamUse> examUses = shown.stream().map(examId -> {
+                ExamViewRepository.ExamView v = views.get(examId);
+                List<ModeUse> modes = AccessRules.MODES.stream().filter(m -> {
+                    Integer limit = g.limits().forMode(m);
+                    return limit == null || limit > 0;
+                }).map(m -> {
+                    Integer limit = g.limits().forMode(m);
+                    int used = usage.getOrDefault(new EntitlementRepository.UseKey(g.id(), examId, m), 0);
+                    return new ModeUse(m, limit, used, limit == null ? null : Math.max(0, limit - used));
+                }).toList();
+                return new ExamUse(examId, v == null ? "" : v.title(), v == null ? "" : v.slug(), modes);
+            }).toList();
+            result.add(new ActivePlan(g.id(), g.planName() == null ? "Premium" : g.planName(), g.source(),
+                    g.scopeType(), g.limits(), g.startsAt(), g.endsAt(), examUses));
+        }
+        return result;
     }
 
     private PaymentView view(Transaction tx) {

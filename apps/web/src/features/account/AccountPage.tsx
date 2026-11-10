@@ -5,7 +5,7 @@ import { useMutation } from '@tanstack/react-query';
 import { z } from 'zod';
 import { Alert, Avatar, Badge, Button, Card, Dialog, Skeleton, TextField } from '@/components/ui';
 import { Link } from 'react-router';
-import { formatPrice, useMySubscription } from '@/features/billing/api';
+import { describeLimits, formatPrice, useMySubscription, type ActivePlan } from '@/features/billing/api';
 import { ApiError } from '@/lib/api/problem';
 import { useAuth } from '@/lib/auth/AuthContext';
 import type { Me } from '@/lib/auth/types';
@@ -150,6 +150,47 @@ const longDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'long' });
 const paymentLabel = { SUCCEEDED: 'Paid', PENDING: 'Waiting for confirmation', FAILED: 'Failed', CANCELLED: 'Cancelled' } as const;
 const paymentTone = { SUCCEEDED: 'free', PENDING: 'warning', FAILED: 'danger', CANCELLED: 'neutral' } as const;
 
+const modeWords = { PRACTICE: 'Practice', MOCK: 'Mock', USER_FRIENDLY: 'Adaptive' } as const;
+
+/** One active plan: what it covers, until when, and attempts left per exam type on each exam. */
+function ActivePlanRow({ plan }: { plan: ActivePlan }) {
+  return (
+    <li className="flex flex-col gap-2 rounded-md border border-border p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex items-center gap-2">
+          <Badge tone="premium">{plan.source === 'MANUAL' ? 'Given' : 'Plan'}</Badge>
+          <span className="font-semibold">{plan.name}</span>
+        </span>
+        <span className="text-[13.5px] text-muted">Until {longDate.format(new Date(plan.endsAt))}</span>
+      </div>
+      {plan.scopeType === 'ALL' && (
+        <p className="text-[14px] text-ink-2">
+          Every exam ·{' '}
+          {describeLimits(plan.limits).join(' · ') || 'No exam types included'}
+        </p>
+      )}
+      {plan.exams.length > 0 && (
+        <ul className="flex flex-col divide-y divide-border text-[14px]">
+          {plan.exams.map((exam) => (
+            <li key={exam.examId} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2">
+              <Link to={`/exams/${exam.slug}`} className="font-semibold">
+                {exam.title || 'Exam'}
+              </Link>
+              <span className="text-ink-2">
+                {exam.modes
+                  .map((m) =>
+                    m.limit === null ? `${modeWords[m.mode]}: unlimited` : `${modeWords[m.mode]}: ${m.left} of ${m.limit} left`,
+                  )
+                  .join(' · ')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 /** The student's Premium status and payments, decided by subscription-service (FR-SUB-06, FR-SUB-08). */
 function PlanCard() {
   const me = useMySubscription();
@@ -158,7 +199,7 @@ function PlanCard() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-bold">Your plan</h2>
         <Link to="/plans" className="font-semibold">
-          {me.data?.premium ? 'Add more time' : 'See Premium plans'}
+          {me.data?.premium ? 'Get another plan' : 'See plans'}
         </Link>
       </div>
       {me.isPending ? (
@@ -167,17 +208,18 @@ function PlanCard() {
         <p className="text-muted">We couldn’t load your plan just now.</p>
       ) : (
         <>
-          {me.data.premium && me.data.premiumEndsAt ? (
-            <p className="flex flex-wrap items-center gap-2">
-              <Badge tone="premium">Premium</Badge>
-              <span>Unlimited attempts on every exam until {longDate.format(new Date(me.data.premiumEndsAt))}.</span>
-            </p>
+          {me.data.plans.length > 0 ? (
+            <ul className="flex flex-col gap-3">
+              {me.data.plans.map((plan) => (
+                <ActivePlanRow key={plan.id} plan={plan} />
+              ))}
+            </ul>
           ) : (
             <p className="flex flex-wrap items-center gap-2">
               <Badge tone="free">Free</Badge>
               <span>
-                Each exam gives you a few free attempts of every exam type. When they’re used up, Premium gives you unlimited
-                attempts.
+                Each exam gives you a few free attempts of every exam type. A plan gives you more, for one subject, a group
+                of subjects or everything.
               </span>
             </p>
           )}

@@ -47,7 +47,7 @@ export function Dialog({ open, onClose, title, description, children, footer, cl
         if (e.target === ref.current) onClose(); // click on the backdrop
       }}
       className={cn(
-        'm-auto w-[min(520px,calc(100vw-32px))] rounded-lg border border-border bg-surface p-0 text-ink shadow-raised',
+        'm-auto max-h-[calc(100dvh-32px)] w-[min(520px,calc(100vw-32px))] overflow-y-auto rounded-lg border border-border bg-surface p-0 text-ink shadow-raised',
         'backdrop:bg-ink/40',
         className,
       )}
