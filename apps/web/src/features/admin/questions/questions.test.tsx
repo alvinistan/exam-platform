@@ -286,6 +286,57 @@ describe('question editor', () => {
     expect(screen.getByLabelText('Solving time (seconds)')).toHaveAttribute('aria-invalid', 'true');
   });
 
+  it('writes a formula with a preview and shows it typeset to students', async () => {
+    const saved: unknown[] = [];
+    mockApi({
+      ...base,
+      'GET /api/admin/catalog/questions/q1': () => jsonResponse(detail({ stemHtml: '<p>Find x.</p>' })),
+      'PUT /api/admin/catalog/questions/q1': ({ body }) => {
+        saved.push(body);
+        return jsonResponse(detail({ version: 4 }));
+      },
+    });
+    renderRoute('/admin/questions/q1');
+    const user = userEvent.setup();
+    const toolbar = await screen.findByRole('toolbar', { name: 'Question text formatting' });
+    await user.click(within(toolbar).getByRole('button', { name: 'Formula' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Insert a formula' });
+    const latex = within(dialog).getByLabelText('LaTeX');
+    await user.click(within(dialog).getByRole('button', { name: 'Fraction' }));
+    expect(latex).toHaveValue('\\frac{a}{b}');
+    expect(dialog.querySelector('.katex')).not.toBeNull();
+
+    await user.clear(latex);
+    await user.type(latex, '\\frac{{1}{{2');
+    expect(within(dialog).getByText(/expected '}'$/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Insert formula' })).toBeDisabled();
+    await user.type(latex, '}');
+    await user.click(within(dialog).getByRole('button', { name: 'Insert formula' }));
+    expect(screen.queryByRole('dialog', { name: 'Insert a formula' })).not.toBeInTheDocument();
+
+    const preview = screen.getByRole('complementary', { name: 'Student preview' });
+    await waitFor(() => expect(preview.querySelector('.katex')).not.toBeNull());
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect((saved[0] as { stemHtml: string }).stemHtml).toContain('\\(\\frac{1}{2}\\)');
+  });
+
+  it('refuses to save a formula students would see as broken', async () => {
+    let calls = 0;
+    mockApi({
+      ...base,
+      'GET /api/admin/catalog/questions/q1': () => jsonResponse(detail({ stemHtml: '<p>Solve \\(x^2 = 4</p>' })),
+      'PUT /api/admin/catalog/questions/q1': () => {
+        calls += 1;
+        return jsonResponse(detail());
+      },
+    });
+    renderRoute('/admin/questions/q1');
+    await userEvent.click(await screen.findByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('A formula starting with \\( isn’t closed with \\).')).toBeInTheDocument();
+    expect(calls).toBe(0);
+  });
+
   it('previews the question as a student, answering and in review', async () => {
     mockApi({ ...base, 'GET /api/admin/catalog/questions/q1': () => jsonResponse(detail()) });
     renderRoute('/admin/questions/q1');

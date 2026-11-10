@@ -1,5 +1,6 @@
 import { useId } from 'react';
 import { Check, CircleCheck, CircleX, X } from 'lucide-react';
+import { RichContent } from '@/components/ui/RichContent';
 import { cn } from '@/lib/cn';
 
 export interface ViewOption {
@@ -33,8 +34,8 @@ interface QuestionViewProps {
 }
 
 /**
- * A question as a student sees it, shared by the admin preview (FR-QB-06) and, later, the attempt screens.
- * HTML here is server-sanitised question text (or editor output in the admin preview). Right and wrong are shown
+ * A question as a student sees it, shared by the admin preview (FR-QB-06) and the attempt screens.
+ * HTML here is server-sanitised question text (or editor output in the admin preview); formulas are typeset by KaTeX. Right and wrong are shown
  * with words and icons as well as colour.
  */
 export function QuestionView({ question, mode, selected, onSelect, number }: QuestionViewProps) {
@@ -52,7 +53,7 @@ export function QuestionView({ question, mode, selected, onSelect, number }: Que
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3">
         {number !== undefined && <p className="text-sm font-semibold text-muted">Question {number}</p>}
-        <div id={groupId} className="rich-text text-[17px] leading-relaxed text-ink" dangerouslySetInnerHTML={{ __html: question.stemHtml }} />
+        <RichContent id={groupId} html={question.stemHtml} className="rich-text text-[17px] leading-relaxed text-ink" />
         {question.stemMediaUrl && (
           <img src={question.stemMediaUrl} alt={question.stemMediaAlt ?? ''} className="max-h-80 max-w-full self-start rounded-md border border-border" />
         )}
@@ -95,7 +96,7 @@ export function QuestionView({ question, mode, selected, onSelect, number }: Que
                 {right ? <Check className="size-4" /> : wrongPick ? <X className="size-4" /> : o.label}
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-2">
-                <span className="rich-text text-[15.5px] text-ink" dangerouslySetInnerHTML={{ __html: o.bodyHtml }} />
+                <RichContent as="span" html={o.bodyHtml} className="rich-text text-[15.5px] text-ink" />
                 {o.mediaUrl && <img src={o.mediaUrl} alt={o.mediaAlt ?? ''} className="max-h-48 max-w-full self-start rounded-sm" />}
                 {review && (right || wrongPick || isSelected) && (
                   <span className={cn('flex items-center gap-1.5 text-[13px] font-semibold', right ? 'text-success-ink' : 'text-danger-ink')}>
@@ -115,7 +116,7 @@ export function QuestionView({ question, mode, selected, onSelect, number }: Que
           {question.explanationHtml && (
             <section className="flex flex-col gap-1.5">
               <h3 className="text-sm font-bold">Explanation</h3>
-              <div className="rich-text text-[15px] text-ink-2" dangerouslySetInnerHTML={{ __html: question.explanationHtml }} />
+              <RichContent html={question.explanationHtml} className="rich-text text-[15px] text-ink-2" />
             </section>
           )}
           {question.keyPoints && question.keyPoints.length > 0 && (
@@ -123,7 +124,7 @@ export function QuestionView({ question, mode, selected, onSelect, number }: Que
               <h3 className="text-sm font-bold">Key points</h3>
               <ul className="list-disc pl-5 text-[15px] text-ink-2">
                 {question.keyPoints.map((k) => (
-                  <li key={k}>{k}</li>
+                  <RichContent as="li" key={k} text={k} />
                 ))}
               </ul>
             </section>
@@ -134,8 +135,8 @@ export function QuestionView({ question, mode, selected, onSelect, number }: Que
               <dl className="flex flex-col gap-1 text-[15px]">
                 {question.definitions.map((d) => (
                   <div key={d.term}>
-                    <dt className="inline font-semibold">{d.term}: </dt>
-                    <dd className="inline text-ink-2">{d.meaning}</dd>
+                    <RichContent as="dt" text={`${d.term}: `} className="inline font-semibold" />
+                    <RichContent as="dd" text={d.meaning} className="inline text-ink-2" />
                   </div>
                 ))}
               </dl>

@@ -1,5 +1,19 @@
 # Changelog
 
+## Phase 12 — Mathematical and chemical formulas in questions
+
+- **Formulas everywhere a question is written**: the question, every option, the explanation, key points and
+  definitions. Write LaTeX between `\(` and `\)` (in the line) or `\[` and `\]` (on its own line); chemistry with
+  `\ce{…}`.
+- **Formula button** in the question editor: a LaTeX box with buttons for fractions, roots, powers, subscripts,
+  symbols, sums, integrals, limits and chemistry, a live preview, and "on its own line". Selecting a formula and
+  pressing the button edits it.
+- **Typeset for students** with KaTeX in Practice, Mock, Adaptive, results review and the admin preview. It is loaded
+  only when a question has a formula, and readable by screen readers (MathML).
+- **Checks**: the editor won't save a formula KaTeX can't read, or one using links or HTML. The server refuses
+  formulas that aren't closed, are empty, or are longer than 1000 characters (also for imports).
+- ADR-017; catalogue contract and import instructions updated.
+
 ## Phase 11C — Promotions: sale prices, discount codes, free access campaigns
 
 - **Sale prices**: any plan can be cheaper in LKR and/or USD between two dates. Pricing shows the regular price crossed

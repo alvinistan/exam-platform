@@ -68,7 +68,9 @@ export function ImportPage() {
         <p className="text-[14.5px] text-muted">
           One row per question. Subject, module and topic must match the content linked to the exam. Separate key points,
           definitions and tags with “|”; write definitions as “term: meaning”; give correct answers as letters, such as “B”
-          or “A, C”.
+          or “A, C”. Write formulas in LaTeX between <code>\(</code> and <code>\)</code>, such as{' '}
+          <code>{'\\(\\frac{1}{2}x^2\\)'}</code>, or <code>{'\\(\\ce{H2O}\\)'}</code> for chemistry; open an imported question to
+          check how its formulas look.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={() => void download('xlsx')}>

@@ -136,6 +136,8 @@ docker compose -f infra/compose/docker-compose.yml --env-file .env exec -T postg
 - **Workflow**: Draft → (Reviewed, optional) → Ready (the API calls it PUBLISHED) → Archived. A question can only
   be reviewed or marked ready when it is complete (FR-QB-04). Marking it ready freezes that version; editing it later
   creates a new version, and students keep the ready one until the change is made live.
+- **Formulas** (Phase 12): LaTeX between `\(` `\)` or `\[` `\]` in the question, options, explanation, key points and
+  definitions; the editor's Σ Formula button has a live preview. Chemistry with `\ce{…}`. Students see them typeset (KaTeX). See ADR-017.
 - **Import**: from the exam's step 3, or Question bank → Import. Download the CSV or Excel template, fill one row per question, upload, check the
   row-by-row report, then confirm. Imported questions start as drafts.
 - **Bulk actions**: select questions in the list to change status, move topic or change bank (all or nothing).
