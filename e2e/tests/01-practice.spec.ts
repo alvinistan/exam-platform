@@ -20,11 +20,10 @@ async function answerWithFeedback(page: Page) {
     // The right answer is shown as soon as the question is answered.
     await expect(page.getByText(/^(Correct — your answer|Correct answer)$/).first()).toBeVisible();
     if (n < total) {
-      if (await page.getByText('Moving on in a moment…').isVisible()) {
-        await expect(page.getByText(`Question ${n + 1} of ${total}`, { exact: true })).toBeVisible();
-      } else {
-        await page.getByRole('button', { name: 'Next question' }).click();
-      }
+      // The question stays on screen, even after a right answer, until the student clicks Next.
+      await page.waitForTimeout(3000);
+      await expect(page.getByText(`Question ${n} of ${total}`, { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Next question' }).click();
     }
   }
   await page.getByRole('button', { name: 'See results' }).click();

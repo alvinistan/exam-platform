@@ -28,6 +28,8 @@
   in sentences are underlined, and the result page's statistics list.
 - `docker compose up --build` no longer fails now and then when it builds the images in parallel.
 - The start page says "Start an adaptive exam".
+- **Practice and Adaptive no longer jump to the next question by themselves** after a right answer. Students read
+  the feedback and explanation, then click **Next question** (or press Enter).
 
 ## Phase 13 — Finance reports and refunds
 

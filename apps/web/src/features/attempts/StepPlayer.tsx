@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, CircleCheck, CircleX, Flag } from 'lucide-react';
+import { ArrowRight, CircleCheck, CircleX } from 'lucide-react';
 import { Alert, Badge, Button, Card, Dialog } from '@/components/ui';
 import { modeLabels } from '@/features/exams/api';
 import { formatDuration } from '@/features/exams/format';
@@ -11,7 +11,6 @@ import { difficultyLabels, levelLabels } from './modes';
 import { Countdown } from './Countdown';
 import { toViewQuestion, useQuestionTimer, useSecondsLeft } from './hooks';
 
-const AUTO_NEXT_MS = 2500;
 
 /**
  * Practice, Adaptive, and a Mock exam set up for instant answers: one question at a time. Choosing an answer (or
@@ -147,7 +146,6 @@ export function StepPlayer({ attempt }: { attempt: Attempt }) {
             last={last}
             nextReady={nextReady}
             onNext={goNext}
-            autoNext={question.review.correct === true}
           />
         )}
       </Card>
@@ -233,31 +231,19 @@ function Feedback({
   last,
   nextReady,
   onNext,
-  autoNext,
 }: {
   question: AttemptQuestion;
   last: boolean;
   /** False while an Adaptive exam's next question is still being chosen. */
   nextReady: boolean;
   onNext: () => void;
-  autoNext: boolean;
 }) {
   const review = question.review;
-  const [waiting, setWaiting] = useState(autoNext && !last);
   const nextRef = useRef<HTMLButtonElement>(null);
-  // The latest onNext, so re-renders (e.g. the countdown ticking) don't restart the wait.
-  const next = useRef(onNext);
-  useEffect(() => {
-    next.current = onNext;
-  });
+  // The student moves on when they're ready; focus goes to the Next button so Enter continues.
   useEffect(() => {
     nextRef.current?.focus();
   }, []);
-  useEffect(() => {
-    if (!waiting || !nextReady) return;
-    const id = window.setTimeout(() => next.current(), AUTO_NEXT_MS);
-    return () => window.clearTimeout(id);
-  }, [waiting, nextReady]);
   if (!review) return null;
   return (
     <div className="flex flex-col gap-3 border-t border-border pt-4" aria-live="polite">
@@ -274,13 +260,7 @@ function Feedback({
         <Button ref={nextRef} onClick={onNext} loading={!nextReady}>
           {last ? 'See results' : 'Next question'} <ArrowRight aria-hidden="true" className="size-4" />
         </Button>
-        {waiting && (
-          <Button variant="ghost" size="sm" onClick={() => setWaiting(false)}>
-            <Flag aria-hidden="true" className="size-4" /> Stay on this question
-          </Button>
-        )}
-        {waiting && <span className="text-[14px] text-muted">Moving on in a moment…</span>}
-        {!waiting && question.estSeconds > 0 && (
+        {question.estSeconds > 0 && (
           <span className="text-[13px] text-muted">Usually takes about {formatDuration(question.estSeconds)}</span>
         )}
       </div>
