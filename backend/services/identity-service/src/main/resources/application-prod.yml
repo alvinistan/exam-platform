@@ -1,0 +1,5 @@
+# Production (the "prod" profile, Phase 14): refuse to start without a configured access-token signing key, so
+# tokens never come from a temporary key that changes on every restart.
+identity:
+  jwt:
+    require-configured-key: ${IDENTITY_REQUIRE_SIGNING_KEY:true}

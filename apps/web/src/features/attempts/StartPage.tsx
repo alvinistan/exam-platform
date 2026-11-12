@@ -9,7 +9,7 @@ import { formatDuration } from '@/features/exams/format';
 import { ApiError } from '@/lib/api/problem';
 import { cn } from '@/lib/cn';
 import { attemptKeys, startAttempt } from './api';
-import { countChoices, minuteChoices, modeFromSlug } from './modes';
+import { countChoices, minuteChoices, modeFromSlug, startHeading } from './modes';
 
 const intro: Record<Mode, string> = {
   PRACTICE: 'One question at a time. You’ll see if you’re right, the correct answer and an explanation straight away.',
@@ -119,7 +119,7 @@ function StartForm({ exam, settings }: { exam: ExamDetail; settings: PublicModeS
         </ol>
       </nav>
       <header className="flex flex-col gap-2">
-        <h1 className="text-3xl font-extrabold tracking-tight">Start a {modeLabels[mode].toLowerCase()}</h1>
+        <h1 className="text-3xl font-extrabold tracking-tight">{startHeading(modeLabels[mode])}</h1>
         <p className="text-muted">{intro[mode]}</p>
         {modeAccess && (
           <p className="flex flex-wrap items-center gap-2 text-[14.5px]">

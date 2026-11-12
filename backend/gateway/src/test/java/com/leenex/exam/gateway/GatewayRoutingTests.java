@@ -169,7 +169,7 @@ class GatewayRoutingTests {
 
     @Test
     void signInIsRateLimitedPerAddress() throws Exception {
-        for (int i = 0; i < 20; i++) {
+        for (int i = 0; i < 60; i++) {
             mvc.perform(get("/api/auth/google/start").with(from("10.0.0.21"))).andExpect(status().isOk());
         }
         mvc.perform(get("/api/auth/google/start").with(from("10.0.0.21")))
@@ -178,6 +178,20 @@ class GatewayRoutingTests {
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
         // Another address has its own allowance.
         mvc.perform(get("/api/auth/google/start").with(from("10.0.0.22"))).andExpect(status().isOk());
+    }
+
+    /** A class on one connection opens the app together: token refreshes have their own, larger allowance. */
+    @Test
+    void tokenRefreshHasItsOwnLargerAllowance() throws Exception {
+        for (int i = 0; i < 60; i++) {
+            mvc.perform(get("/api/auth/google/start").with(from("10.0.0.41"))).andExpect(status().isOk());
+        }
+        for (int i = 0; i < 300; i++) {
+            mvc.perform(post("/api/auth/token").with(from("10.0.0.41"))).andExpect(status().isOk());
+        }
+        mvc.perform(post("/api/auth/token").with(from("10.0.0.41")))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
     }
 
     @Test
