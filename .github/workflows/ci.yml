@@ -30,9 +30,11 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      # Unit tests plus Testcontainers integration tests (real PostgreSQL 16 per service).
+      # Security pins in backend/pom.xml must never end up older than Spring Boot's own versions.
       - name: Check version pins aren't downgrades
+        working-directory: .
         run: python3 .github/scripts/check_pins.py
+      # Unit tests plus Testcontainers integration tests (real PostgreSQL 16 per service).
       - name: Build and test
         run: |
           set -o pipefail
