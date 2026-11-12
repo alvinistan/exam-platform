@@ -64,10 +64,9 @@ test('student pages, including a question and a result', async ({ page }) => {
 
   if ((await chooseFirstAnswer(page)) === 'multi') await page.getByRole('button', { name: 'Check answer' }).click();
   await expect(page.getByText(/^(Correct — your answer|Correct answer)$/).first()).toBeVisible();
-  await page
-    .getByRole('button', { name: 'Stay on this question' })
-    .click()
-    .catch(() => undefined);
+  // A right answer moves on by itself after a moment; stay so the feedback is what gets checked.
+  const stay = page.getByRole('button', { name: 'Stay on this question' });
+  if (await stay.isVisible()) await stay.click();
   await audit(page, 'feedback');
 
   await page.getByRole('button', { name: 'Finish' }).click();
