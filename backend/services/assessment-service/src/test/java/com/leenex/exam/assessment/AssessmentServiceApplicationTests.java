@@ -7,15 +7,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.leenex.exam.platform.security.EndpointSecurityMatrix;
 import com.leenex.exam.platform.security.TestTokens;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -27,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /** Boots assessment-service against a real PostgreSQL 16 and checks the Phase 4 foundation. */
 @SpringBootTest
@@ -142,5 +147,16 @@ class AssessmentServiceApplicationTests {
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    @Autowired
+    @Qualifier("requestMappingHandlerMapping")
+    RequestMappingHandlerMapping mapping;
+
+    /** Phase 14: assessment-service has no public endpoints; each one needs a signed-in student. */
+    @Test
+    void everyEndpointIsProtected() throws Exception {
+        EndpointSecurityMatrix.verify(mvc, mapping, Set.of(), Map.of("position", "1"),
+                TestTokens.student(UUID.randomUUID()), TestTokens.admin(UUID.randomUUID()));
     }
 }

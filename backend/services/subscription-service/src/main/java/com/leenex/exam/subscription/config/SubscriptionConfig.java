@@ -32,7 +32,8 @@ public class SubscriptionConfig {
 
     /**
      * Refuses to start with payment settings that would be unsafe: the TEST stand-in under the "prod" profile, PayHere
-     * without merchant credentials, or live PayHere without HTTPS (ADR-011).
+     * without merchant credentials, the PayHere sandbox under "prod" (test cards would buy real access), or live
+     * PayHere without HTTPS (ADR-011).
      */
     @Bean
     ApplicationRunner paymentSettingsCheck(SubscriptionProperties properties, Environment environment) {
@@ -47,6 +48,10 @@ public class SubscriptionConfig {
         if (!p.test()) {
             if (isBlank(p.payhere().merchantId()) || isBlank(p.payhere().merchantSecret())) {
                 throw new IllegalStateException("PAYHERE needs PAYHERE_MERCHANT_ID and PAYHERE_MERCHANT_SECRET");
+            }
+            if (p.payhere().sandbox() && prod && !p.allowSandboxInProd()) {
+                throw new IllegalStateException("The PayHere sandbox is not allowed with the prod profile (set "
+                        + "PAYHERE_SANDBOX=false, or PAYMENTS_ALLOW_SANDBOX_IN_PROD=true for a staging site)");
             }
             if (!p.payhere().sandbox() && !"https".equals(p.publicBaseUrl().getScheme())) {
                 throw new IllegalStateException("Live PayHere needs an https PUBLIC_BASE_URL");

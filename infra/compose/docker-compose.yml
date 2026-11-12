@@ -117,6 +117,7 @@ services:
       PAYHERE_APP_ID: ${PAYHERE_APP_ID:-}
       PAYHERE_APP_SECRET: ${PAYHERE_APP_SECRET:-}
       PAYHERE_SANDBOX: ${PAYHERE_SANDBOX:-true}
+      PAYMENTS_ALLOW_SANDBOX_IN_PROD: ${PAYMENTS_ALLOW_SANDBOX_IN_PROD:-false}
 
   gateway:
     build: { <<: *service-build, args: { MODULE: gateway } }
