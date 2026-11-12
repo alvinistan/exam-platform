@@ -172,6 +172,9 @@ class GatewayRoutingTests {
         for (int i = 0; i < 60; i++) {
             mvc.perform(get("/api/auth/google/start").with(from("10.0.0.21"))).andExpect(status().isOk());
         }
+        // The bucket refills one request a second while the test runs, so keep going until it's empty.
+        int extra = untilRefused(get("/api/auth/google/start"), "10.0.0.21", 200);
+        assertThat(extra).isLessThan(200);
         mvc.perform(get("/api/auth/google/start").with(from("10.0.0.21")))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().exists("Retry-After"))
@@ -183,12 +186,11 @@ class GatewayRoutingTests {
     /** A class on one connection opens the app together: token refreshes have their own, larger allowance. */
     @Test
     void tokenRefreshHasItsOwnLargerAllowance() throws Exception {
-        for (int i = 0; i < 60; i++) {
-            mvc.perform(get("/api/auth/google/start").with(from("10.0.0.41"))).andExpect(status().isOk());
-        }
+        untilRefused(get("/api/auth/google/start"), "10.0.0.41", 400);
         for (int i = 0; i < 300; i++) {
             mvc.perform(post("/api/auth/token").with(from("10.0.0.41"))).andExpect(status().isOk());
         }
+        assertThat(untilRefused(post("/api/auth/token"), "10.0.0.41", 1000)).isLessThan(1000);
         mvc.perform(post("/api/auth/token").with(from("10.0.0.41")))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
@@ -208,6 +210,17 @@ class GatewayRoutingTests {
                 .andExpect(status().isOk());
         // Reading plans is not limited.
         mvc.perform(get("/api/subscriptions/me").header("Authorization", "Bearer " + alice)).andExpect(status().isOk());
+    }
+
+    /** Sends requests until one is refused with 429; returns how many were allowed first (max = never refused). */
+    private int untilRefused(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
+                             String address, int max) throws Exception {
+        for (int i = 0; i < max; i++) {
+            if (mvc.perform(request.with(from(address))).andReturn().getResponse().getStatus() == 429) {
+                return i;
+            }
+        }
+        return max;
     }
 
     private static org.springframework.test.web.servlet.request.RequestPostProcessor from(String address) {

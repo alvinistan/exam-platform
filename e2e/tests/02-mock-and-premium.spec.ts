@@ -112,6 +112,6 @@ test('mock exam: server timer, no answers before submitting, review screen, then
 
   await admin.goto('/admin/payments');
   await expect(admin.getByRole('heading', { name: 'Payments', level: 1 })).toBeVisible();
-  await expect(admin.getByText(planName).first()).toBeVisible();
+  await expect(admin.getByRole('table', { name: 'Payments' }).getByText(planName).first()).toBeVisible();
   await adminContext.close();
 });

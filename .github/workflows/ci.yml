@@ -170,19 +170,20 @@ jobs:
         run: |
           npx tsc --noEmit
           npx playwright test
-      - name: Install k6
-        if: ${{ !cancelled() }}
+      - name: Page snapshots of failed browser tests
+        if: failure()
+        working-directory: e2e
         run: |
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg \
-            --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
-            | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update -qq && sudo apt-get install -y -qq k6
-          k6 version
+          for f in test-results/*/error-context.md; do
+            [ -f "$f" ] || continue
+            echo "::group::$f"; head -c 12000 "$f"; echo; echo "::endgroup::"
+          done
+      # Grafana's official k6 image, on the host network so it reaches the stack at localhost.
       - name: Load test (mock exams)
         if: ${{ !cancelled() }}
         run: |
-          k6 run --summary-export load-summary.json -e STUDENTS=20 -e DURATION=3m e2e/load/mock-exam.js
+          docker run --rm --network host -u "$(id -u):$(id -g)" -v "$PWD:/work" -w /work grafana/k6:1.0.0 \
+            run --summary-export load-summary.json -e STUDENTS=20 -e DURATION=3m e2e/load/mock-exam.js
       - name: Load test summary
         if: ${{ !cancelled() }}
         run: python3 .github/scripts/k6_summary.py load-summary.json

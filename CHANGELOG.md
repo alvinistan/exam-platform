@@ -1,5 +1,31 @@
 # Changelog
 
+## Phase 14 — QA and security hardening
+
+- **Security review** of every service, the gateway, the web app and the Docker set-up; results and the go-live list
+  are in `docs/security/security-checklist.md`. Fixes:
+  - The checkout page couldn't send students to PayHere: the web server's Content Security Policy blocked the form.
+    Formulas also lost their layout under the same policy. Both are allowed now (and tested).
+  - A production server refuses to start with the PayHere **sandbox** (sandbox test cards would have bought real
+    access) unless `PAYMENTS_ALLOW_SANDBOX_IN_PROD=true` is set for a staging site.
+  - Under the `prod` profile the services refuse to start without their signing keys (access tokens, image links).
+  - **Rate limits:** refreshing the sign-in (every page load) had the same limit as signing in, 20 a minute per
+    internet connection, so a class on one connection would have seen errors. Refresh now has its own allowance
+    (300 a minute); signing in allows 60 a minute.
+  - The address to return to after sign-in accepts only plain paths on the site.
+- **Endpoint protection tests:** every endpoint of every service is called without a token, with a forged token and
+  with the wrong role; only endpoints listed as public may answer.
+- **End-to-end tests** (`e2e/`, Playwright) against the whole stack in Docker, on every pull request: the admin
+  publishes an exam; Practice, Adaptive and Mock exams; free attempts running out; buying a plan; receipts; access
+  between students and roles; security headers. A small fake Google sign-in is used for the tests only.
+- **Accessibility:** automated WCAG 2.2 A/AA checks (axe) on public, student and admin screens.
+- **Load test** of mock exams (k6) in CI, with limits on errors and response times; results in
+  `docs/testing/test-report.md`.
+- **Updates:** Spring Boot 4.1.2, Spring Cloud 2025.1.4, Node.js 26, image and HTML-sanitiser libraries, setup-java
+  (replaces Dependabot pull requests #22–#26). Spring Boot now ships the fixed Tomcat and Jackson versions, so the
+  Phase 4 overrides are removed; CI fails if an override would ever downgrade a library.
+- The start page says "Start an adaptive exam".
+
 ## Phase 13 — Finance reports and refunds
 
 - **Finance** (Administration → Finance), for a period you choose (last 7 or 30 days, this or last month, this year,

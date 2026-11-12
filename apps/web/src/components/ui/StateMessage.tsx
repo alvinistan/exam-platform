@@ -52,7 +52,7 @@ export function ErrorState({ title = 'Something went wrong', children, onRetry, 
         }
       >
         {children ?? <p>Please try again in a moment.</p>}
-        {correlationId && <p className="mt-2 text-[13px] text-subtle">Reference: {correlationId}</p>}
+        {correlationId && <p className="mt-2 text-[13px] text-muted">Reference: {correlationId}</p>}
       </StateMessage>
     </div>
   );

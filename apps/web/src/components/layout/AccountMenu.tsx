@@ -62,12 +62,13 @@ export function AccountMenu() {
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
-        aria-label={`${user.displayName}, account menu`}
         onClick={() => setOpen((o) => !o)}
         className="flex min-h-11 items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-2"
       >
         <Avatar name={user.displayName} photoUrl={user.photoUrl} />
-        <span className="hidden max-w-40 truncate text-[15px] font-semibold sm:inline">{user.displayName}</span>
+        {/* The name is the button's accessible name (visible from the small breakpoint up), so speech users can say it. */}
+        <span className="sr-only text-[15px] font-semibold sm:not-sr-only sm:max-w-40 sm:truncate">{user.displayName}</span>
+        <span className="sr-only">, account menu</span>
         <ChevronDown aria-hidden="true" className="size-4 text-muted" />
       </button>
       {open && (

@@ -8,7 +8,9 @@ import { ADMIN_EMAIL, chooseFirstAnswer, newStudentEmail, sampleExam, signIn } f
  * and screen-reader checks by hand are still needed (see docs/testing/test-report.md).
  */
 async function audit(page: Page, name: string) {
-  await page.waitForLoadState('networkidle');
+  // Wait until loading placeholders are gone; "network idle" never comes on pages that refresh in the background.
+  await page.waitForLoadState('load');
+  await expect(page.locator('[aria-busy="true"], .animate-shimmer')).toHaveCount(0);
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
   await test.info().attach(`axe-${name}.json`, {
     body: JSON.stringify(results.violations, null, 2),
@@ -16,13 +18,14 @@ async function audit(page: Page, name: string) {
   });
   const blocking = results.violations
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')
-    .map(
-      (v) =>
-        `${v.id} (${v.impact}): ${v.help} — ${v.nodes
-          .map((n) => n.target.join(' '))
-          .slice(0, 3)
-          .join(' | ')}`,
-    );
+    .map((v) => {
+      const nodes = v.nodes
+        .slice(0, 4)
+        .map(
+          (n) => `\n    ${n.target.join(' ')}: ${n.html.slice(0, 200)}\n      ${(n.failureSummary ?? '').replace(/\n/g, ' ')}`,
+        );
+      return `${v.id} (${v.impact}): ${v.help}${nodes.join('')}`;
+    });
   expect(blocking, `${name}: accessibility problems`).toEqual([]);
 }
 
