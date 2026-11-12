@@ -11,7 +11,7 @@ RUN --mount=type=cache,target=/root/.m2 \
     test -n "$MODULE" && mvn -B -ntp -q -pl "$MODULE" -am -DskipTests package \
     && cp "$MODULE/target/$(basename "$MODULE").jar" /app.jar
 
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 ARG MODULE
 # Pick up Alpine security fixes released after the base image was built.
 RUN apk upgrade --no-cache
