@@ -24,6 +24,9 @@
 - **Updates:** Spring Boot 4.1.2, Spring Cloud 2025.1.4, Node.js 26, image and HTML-sanitiser libraries, setup-java
   (replaces Dependabot pull requests #22–#26). Spring Boot now ships the fixed Tomcat and Jackson versions, so the
   Phase 4 overrides are removed; CI fails if an override would ever downgrade a library.
+- **Accessibility fixes** found by the checks: the account menu button's name, contrast of small grey labels, links
+  in sentences are underlined, and the result page's statistics list.
+- `docker compose up --build` no longer fails now and then when it builds the images in parallel.
 - The start page says "Start an adaptive exam".
 
 ## Phase 13 — Finance reports and refunds

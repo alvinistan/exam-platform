@@ -26,14 +26,15 @@ repository), a smaller machine than the planned production server.
 
 | Measure | Result | Limit |
 | --- | --- | --- |
-| Mock exams completed | 180 | — |
-| Requests | 2,285 (10 a second) | — |
+| Mock exams completed | 178 | — |
+| Requests | 2,261 (10 a second) | — |
 | Failed requests | 0% | < 1% |
-| Checks passed | 2,160 of 2,160 | > 99% |
-| Start a mock exam (picks questions, asks for access) | 95% under 502 ms (slowest 711 ms) | 95% under 1.5 s |
-| Save an answer | 95% under 22 ms (slowest 47 ms) | 95% under 0.5 s |
-| Submit and mark | 95% under 25 ms (slowest 36 ms) | 95% under 1.5 s |
+| Checks passed | 2,136 of 2,136 | > 99% |
+| Start a mock exam (picks questions, asks for access) | 95% under 727 ms (slowest 1.04 s) | 95% under 1.5 s |
+| Save an answer | 95% under 27 ms (slowest 60 ms) | 95% under 0.5 s |
+| Submit and mark | 95% under 35 ms (slowest 75 ms) | 95% under 1.5 s |
 
+An earlier run gave nearly the same figures (start 502 ms, answer 22 ms, submit 25 ms at the 95th percentile).
 Starting an exam is the slowest step because it calls catalog-service for the question pool and subscription-service
 for the access decision. At this rate one server handles a class of students starting together comfortably. Before a
 large launch (hundreds of students starting in the same minute), repeat the test on the production server with more
@@ -55,6 +56,7 @@ students: `k6 run -e STUDENTS=200 -e DURATION=10m e2e/load/mock-exam.js`.
 | axe | Links inside sentences were distinguished by colour only | In-text links are underlined |
 | axe | Result page: the score line was an invalid child of a description list | Moved out of the list |
 | End-to-end | Start page said "Start a adaptive exam" | "Start an adaptive exam" |
+| End-to-end | Building all images at once (`docker compose up --build`) sometimes failed: the builds corrupted their shared Maven cache | The cache is locked while in use |
 
 ## Not covered automatically
 
