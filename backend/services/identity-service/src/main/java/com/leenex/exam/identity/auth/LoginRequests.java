@@ -67,7 +67,15 @@ public class LoginRequests {
     static String safeReturnTo(String returnTo) {
         if (returnTo == null || returnTo.isBlank() || returnTo.length() > 200
                 || !returnTo.startsWith("/") || returnTo.startsWith("//") || returnTo.contains("\\")
-                || returnTo.chars().anyMatch(c -> c < 0x20 || c == 0x7f)) {
+                || returnTo.chars().anyMatch(c -> c <= 0x20 || c == 0x7f)) {
+            return "/";
+        }
+        try {
+            java.net.URI uri = new java.net.URI(returnTo);
+            if (uri.getScheme() != null || uri.getRawAuthority() != null) {
+                return "/";
+            }
+        } catch (java.net.URISyntaxException e) {
             return "/";
         }
         return returnTo;

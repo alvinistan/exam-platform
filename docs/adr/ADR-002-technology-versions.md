@@ -24,14 +24,13 @@ Boot 3.5 (end-of-life); TypeScript 7.0 (too new for the toolchain today).
 | Area | Version | Notes |
 | --- | --- | --- |
 | Java | 21 (Temurin) | CI and runtime images |
-| Spring Boot | 4.1.1 | Parent POM |
-| Spring Cloud | 2025.1.3 (Oakwood) | Supports Boot 4.1.x from 2025.1.2 |
+| Spring Boot | 4.1.2 | Parent POM |
+| Spring Cloud | 2025.1.4 (Oakwood) | Supports Boot 4.1.x from 2025.1.2 |
 | springdoc-openapi | 3.0.3 | |
-| Tomcat (override) | 11.0.25 | Fixes three CRITICAL CVEs in Boot 4.1.1's 11.0.24 |
-| Jackson 3 / 2 (override) | 3.1.7 / 2.21.7 | Fixes HIGH CVEs in 3.1.5 / 2.21.5 |
+| Tomcat / Jackson 3 / Jackson 2 | 11.0.27 / 3.1.7 / 2.21.7 (Boot-managed) | The Phase 4 security overrides were removed in Phase 14: Boot 4.1.2 ships these fixed versions. CI fails if a future override is older than Boot's version |
 | Apache HttpClient | 5 (Boot-managed) | Gateway upstream client; the JDK client raced on proxied bodies |
 | PostgreSQL | 16 (alpine) | Compose, CI, Testcontainers |
-| Node.js | 24 LTS | CI and web image build |
+| Node.js | 26 LTS | CI and web image build |
 | React / React DOM | 19.3.0 | |
 | Vite / plugin-react | 8.3.4 / 6.1.2 | |
 | Tailwind CSS | 4.3.3 | |

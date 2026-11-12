@@ -45,11 +45,21 @@ gateway:
   jwks-uri: ${IDENTITY_JWKS_URI:http://localhost:8081/.well-known/jwks.json}
   # In-memory token buckets (ADR-015). capacity = burst; refill-per-minute = steady rate.
   rate-limits:
+    # Starting a Google sign-in. Per address, generous enough for a class signing in together on one connection.
     - name: sign-in
-      paths: [/api/auth/**]
+      paths: [/api/auth/google/**]
       key: IP
-      capacity: 20
-      refill-per-minute: 20
+      capacity: 60
+      refill-per-minute: 60
+    # Token refresh runs on every page load and every 15 minutes for each open tab (Phase 14: it used to share the
+    # sign-in limit, which a class on one connection would exceed). Refresh tokens are long random values, so this
+    # only guards against floods.
+    - name: token-refresh
+      paths: [/api/auth/token, /api/auth/logout]
+      methods: [POST]
+      key: IP
+      capacity: 300
+      refill-per-minute: 300
     - name: checkout
       paths: [/api/subscriptions/checkout]
       methods: [POST]

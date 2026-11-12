@@ -1,0 +1,4 @@
+# Production (the "prod" profile, Phase 14): refuse to start without a configured media signing key.
+catalog:
+  media:
+    require-signing-key: ${CATALOG_REQUIRE_MEDIA_SIGNING_KEY:true}

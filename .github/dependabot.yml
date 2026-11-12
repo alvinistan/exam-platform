@@ -11,6 +11,14 @@ updates:
     directory: /apps/web
     schedule: { interval: weekly }
     open-pull-requests-limit: 5
+  # End-to-end tests (Phase 14); Playwright, its core and axe move together.
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule: { interval: monthly }
+    open-pull-requests-limit: 3
+    groups:
+      playwright:
+        patterns: ["@playwright/*", "playwright-core", "@axe-core/*"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: monthly }

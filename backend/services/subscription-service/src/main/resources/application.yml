@@ -42,6 +42,8 @@ subscription:
   payments:
     provider: ${PAYMENT_PROVIDER:TEST}
     public-base-url: ${PUBLIC_BASE_URL:http://localhost:8088}
+    # Phase 14: the prod profile refuses the PayHere sandbox unless this is true (staging sites only).
+    allow-sandbox-in-prod: ${PAYMENTS_ALLOW_SANDBOX_IN_PROD:false}
     payhere:
       merchant-id: ${PAYHERE_MERCHANT_ID:}
       merchant-secret: ${PAYHERE_MERCHANT_SECRET:}

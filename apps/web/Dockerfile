@@ -2,7 +2,7 @@
 # Builds the web app and serves it with Caddy, which also proxies /api to the gateway (same origin, no CORS).
 # Build from the repository root:  docker build -f apps/web/Dockerfile -t web .
 
-FROM node:24-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund

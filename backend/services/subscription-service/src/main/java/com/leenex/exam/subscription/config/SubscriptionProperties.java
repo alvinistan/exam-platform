@@ -23,11 +23,14 @@ public record SubscriptionProperties(@DefaultValue CatalogFeed catalogFeed, @Def
      * @param publicBaseUrl where students reach the web app; return, cancel and notification links are built from it
      *                      (PayHere must be able to reach {@code /api/payments/webhooks/payhere} on it)
      * @param payhere       merchant settings from the PayHere dashboard
+     * @param allowSandboxInProd lets a "prod" server use the PayHere sandbox, for a staging site only: sandbox test
+     *                      cards would otherwise buy real subscriptions
      */
     public record Payments(
             @DefaultValue("TEST") String provider,
             @DefaultValue("http://localhost:8088") URI publicBaseUrl,
-            @DefaultValue PayHere payhere) {
+            @DefaultValue PayHere payhere,
+            @DefaultValue("false") boolean allowSandboxInProd) {
 
         public boolean test() {
             return "TEST".equalsIgnoreCase(provider);

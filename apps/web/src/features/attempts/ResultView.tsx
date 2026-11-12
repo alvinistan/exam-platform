@@ -69,27 +69,29 @@ export function ResultView({ attempt }: { attempt: Attempt }) {
             </Badge>
           )}
         </div>
-        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Stat
-            icon={<CircleCheck aria-hidden="true" className="size-5 text-success" />}
-            label="Correct"
-            value={result.correct}
-          />
-          <Stat icon={<CircleX aria-hidden="true" className="size-5 text-danger" />} label="Incorrect" value={result.incorrect} />
-          <Stat
-            icon={<CircleMinus aria-hidden="true" className="size-5 text-subtle" />}
-            label="Not answered"
-            value={result.unanswered}
-          />
-          <Stat
-            icon={<Clock aria-hidden="true" className="size-5 text-muted" />}
-            label="Time"
-            value={formatDuration(result.durationSeconds)}
-          />
-          <div className="col-span-2 text-[14.5px] text-muted sm:col-span-4">
+        <div className="flex flex-col gap-4">
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Stat
+              icon={<CircleCheck aria-hidden="true" className="size-5 text-success" />}
+              label="Correct"
+              value={result.correct}
+            />
+            <Stat icon={<CircleX aria-hidden="true" className="size-5 text-danger" />} label="Incorrect" value={result.incorrect} />
+            <Stat
+              icon={<CircleMinus aria-hidden="true" className="size-5 text-subtle" />}
+              label="Not answered"
+              value={result.unanswered}
+            />
+            <Stat
+              icon={<Clock aria-hidden="true" className="size-5 text-muted" />}
+              label="Time"
+              value={formatDuration(result.durationSeconds)}
+            />
+          </dl>
+          <p className="text-[14.5px] text-muted">
             Score {formatScore(result.score)} out of {formatScore(result.maxScore)}
-          </div>
-        </dl>
+          </p>
+        </div>
       </Card>
 
       <section aria-labelledby="topics-heading" className="flex flex-col gap-3">

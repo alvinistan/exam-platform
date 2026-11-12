@@ -19,7 +19,7 @@
         <dependency>
             <groupId>com.googlecode.owasp-java-html-sanitizer</groupId>
             <artifactId>owasp-java-html-sanitizer</artifactId>
-            <version>20260101.1</version>
+            <version>20261011.1</version>
         </dependency>
         <!-- XLSX question imports (FR-QB-08). -->
         <dependency>
@@ -31,7 +31,7 @@
         <dependency>
             <groupId>com.twelvemonkeys.imageio</groupId>
             <artifactId>imageio-webp</artifactId>
-            <version>3.12.0</version>
+            <version>3.15.3</version>
         </dependency>
     </dependencies>
 

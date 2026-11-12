@@ -11,6 +11,12 @@ export function modeFromSlug(slug: string | undefined): Mode | undefined {
   return (Object.entries(modeSlugs) as [Mode, string][]).find(([, s]) => s === slug)?.[0];
 }
 
+/** "Start a practice", "Start a mock exam", "Start an adaptive exam". */
+export function startHeading(label: string): string {
+  const name = label.toLowerCase();
+  return `Start ${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name}`;
+}
+
 export const startPath = (examSlug: string, mode: Mode) => `/exams/${examSlug}/start/${modeSlugs[mode]}`;
 
 /** Question-count choices offered to students, never above the exam type's maximum. */

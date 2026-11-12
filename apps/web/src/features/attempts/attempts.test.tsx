@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { jsonResponse, mockApi, renderRoute, signedIn } from '@/test/render';
 import { examDetail } from '@/test/fixtures';
 import { clearSession } from '@/lib/auth/session';
-import { countChoices, minuteChoices } from './modes';
+import { countChoices, minuteChoices, startHeading } from './modes';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -210,6 +210,12 @@ describe('starting an exam', () => {
     expect(minuteChoices(null)).toEqual([10, 20, 30]);
     expect(minuteChoices(25 * 60)).toEqual([10, 20]);
     expect(minuteChoices(5 * 60)).toEqual([5]);
+  });
+
+  it('uses the right article in the start heading', () => {
+    expect(startHeading('Practice')).toBe('Start a practice');
+    expect(startHeading('Mock exam')).toBe('Start a mock exam');
+    expect(startHeading('Adaptive exam')).toBe('Start an adaptive exam');
   });
 });
 

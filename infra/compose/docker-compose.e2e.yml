@@ -1,0 +1,37 @@
+# End-to-end tests only (Phase 14), added on top of docker-compose.yml:
+#   docker compose -f infra/compose/docker-compose.yml -f infra/compose/docker-compose.e2e.yml --env-file .env up -d --build
+# Adds a fake Google sign-in (e2e/fake-google) and points identity-service at it. Never use this file anywhere real:
+# anyone who can reach the fake can sign in as any email address, including the bootstrap admin.
+services:
+  fake-google:
+    image: node:26-alpine
+    command: ["node", "/app/server.mjs"]
+    volumes:
+      - ../../e2e/fake-google:/app:ro
+    environment:
+      PORT: "8099"
+      CLIENT_ID: e2e-client.apps.googleusercontent.com
+      CLIENT_SECRET: e2e-client-secret
+    # The browser opens /authorize here; identity-service calls /token and /certs inside Docker's network.
+    ports: ["127.0.0.1:8099:8099"]
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    user: node
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8099/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  identity-service:
+    depends_on:
+      fake-google: { condition: service_healthy }
+    environment:
+      GOOGLE_CLIENT_ID: e2e-client.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: e2e-client-secret
+      ADMIN_BOOTSTRAP_EMAIL: admin@e2e.test
+      SPRING_APPLICATION_JSON: >-
+        {"identity":{"google":{
+          "authorization-uri":"http://localhost:8099/authorize",
+          "token-uri":"http://fake-google:8099/token",
+          "jwk-set-uri":"http://fake-google:8099/certs"}}}

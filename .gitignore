@@ -27,3 +27,7 @@ Thumbs.db
 
 # Local service data (question images when a service runs outside Docker)
 backend/services/*/data/
+
+# Playwright end-to-end test output
+e2e/test-results/
+e2e/playwright-report/
