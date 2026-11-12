@@ -14,7 +14,7 @@ header {
 	Referrer-Policy "strict-origin-when-cross-origin"
 	Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
 	Cross-Origin-Opener-Policy "same-origin"
-	Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://accounts.google.com"
+	Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self'; style-src-attr 'unsafe-inline'; script-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://accounts.google.com https://sandbox.payhere.lk https://www.payhere.lk"
 	-Server
 }
 

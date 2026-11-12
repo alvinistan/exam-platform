@@ -8,7 +8,7 @@ with a freemium access model. An exam is data an administrator creates, not a pa
 ```
 apps/web/                 React 19 + TypeScript + Vite web app (students and administrators)
 backend/
-  pom.xml                 Maven parent: Spring Boot 4.1.1, Spring Cloud 2025.1.3, Java 21
+  pom.xml                 Maven parent: Spring Boot 4.1.2, Spring Cloud 2025.1.4, Java 21
   libs/platform-web/      shared error model, correlation IDs, UUIDv7, security baseline (no entities)
   gateway/                Spring Cloud Gateway: the only public entry point for /api
   services/

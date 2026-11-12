@@ -24,8 +24,8 @@ Boot 3.5 (end-of-life); TypeScript 7.0 (too new for the toolchain today).
 | Area | Version | Notes |
 | --- | --- | --- |
 | Java | 21 (Temurin) | CI and runtime images |
-| Spring Boot | 4.1.1 | Parent POM |
-| Spring Cloud | 2025.1.3 (Oakwood) | Supports Boot 4.1.x from 2025.1.2 |
+| Spring Boot | 4.1.2 | Parent POM |
+| Spring Cloud | 2025.1.4 (Oakwood) | Supports Boot 4.1.x from 2025.1.2 |
 | springdoc-openapi | 3.0.3 | |
 | Tomcat (override) | 11.0.25 | Fixes three CRITICAL CVEs in Boot 4.1.1's 11.0.24 |
 | Jackson 3 / 2 (override) | 3.1.7 / 2.21.7 | Fixes HIGH CVEs in 3.1.5 / 2.21.5 |
