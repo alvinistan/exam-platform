@@ -54,14 +54,15 @@ public final class ExamViews {
                             String coverUrl, boolean featured, Integer displayOrder, List<String> modes, String status,
                             OffsetDateTime publishedAt, OffsetDateTime updatedAt, int version,
                             int publishedQuestionCount, int trialQuestionCount, int topicCount,
-                            Readiness publishReadiness) {
+                            Readiness publishReadiness, int draftQuestionCount, int subjectCount) {
     }
 
     public record AdminExamDetail(UUID id, String title, String slug, UUID categoryId, String shortDescription,
                                   String coverUrl, boolean featured, Integer displayOrder, List<String> modes,
                                   String status, OffsetDateTime publishedAt, OffsetDateTime updatedAt, int version,
                                   int publishedQuestionCount, int trialQuestionCount, int topicCount,
-                                  Readiness publishReadiness, String instructions, String seoTitle,
-                                  String seoDescription, List<UUID> subjectIds, List<ModeSettings> modeSettings) {
+                                  Readiness publishReadiness, int draftQuestionCount, int subjectCount,
+                                  String instructions, String seoTitle, String seoDescription, List<UUID> subjectIds,
+                                  List<ModeSettings> modeSettings) {
     }
 }

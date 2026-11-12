@@ -19,15 +19,15 @@ describe('exam page', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Nursing Licensure Review' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Nursing' })).toHaveAttribute('href', '/exams?category=nursing');
     expect(screen.getByText('See the answer after each question')).toBeInTheDocument();
-    expect(screen.getByText('75 questions')).toBeInTheDocument();
-    expect(screen.getByText('Time limit 1 h 30 min')).toBeInTheDocument();
+    expect(screen.getByText('Up to 75 questions, or choose how many minutes you have')).toBeInTheDocument();
+    expect(screen.getByText('Timed, up to 1 h 30 min')).toBeInTheDocument();
     expect(screen.getByText('Pass mark 60%')).toBeInTheDocument();
     expect(screen.getByText('Wrong answers lose 0.25 of a mark')).toBeInTheDocument();
     expect(screen.getByText(/Some questions have more than one answer/)).toBeInTheDocument();
     expect(screen.getByText('IV flow rates')).toBeInTheDocument();
     expect(within(screen.getByRole('complementary', { name: 'Exam summary' })).getByText('2')).toBeInTheDocument();
-    // Starting sessions arrives with the attempt modes; no button pretends to work before then.
-    expect(screen.queryByRole('button', { name: /start/i })).not.toBeInTheDocument();
+    // Visitors are asked to sign in before starting.
+    expect(screen.getAllByRole('button', { name: 'Sign in to start' })).toHaveLength(2);
     await waitFor(() => expect(document.title).toBe('Nursing Licensure Review · Leenex Labs'));
   });
 
@@ -69,7 +69,7 @@ describe('catalogue', () => {
     expect(nursing).toHaveAttribute('href', '/exams/nursing-licensure');
     expect(screen.getByText('2 exams')).toBeInTheDocument();
     expect(screen.getAllByText('IT certifications').length).toBeGreaterThan(0);
-    expect(screen.getByText('Guided practice')).toBeInTheDocument();
+    expect(screen.getByText('Adaptive exam')).toBeInTheDocument();
 
     await userEvent.selectOptions(screen.getByLabelText('Category'), 'it-certifications');
     await waitFor(() =>

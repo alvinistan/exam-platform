@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router';
-import { ChevronDown, LayoutDashboard, LogOut, UserRound } from 'lucide-react';
+import { ChartNoAxesColumn, ChevronDown, LayoutDashboard, LogOut, UserRound } from 'lucide-react';
 import { Avatar, Button, Skeleton } from '@/components/ui';
 import { useAuth } from '@/lib/auth/AuthContext';
 
@@ -80,6 +80,9 @@ export function AccountMenu() {
             <p className="truncate text-[13px] text-muted">{user.email}</p>
           </div>
           <nav aria-label="Account" className="flex flex-col gap-0.5 pt-1.5">
+            <Link to="/progress" className={itemClass}>
+              <ChartNoAxesColumn aria-hidden="true" className="size-4 text-muted" /> My progress
+            </Link>
             <Link to="/account" className={itemClass}>
               <UserRound aria-hidden="true" className="size-4 text-muted" /> Your account
             </Link>

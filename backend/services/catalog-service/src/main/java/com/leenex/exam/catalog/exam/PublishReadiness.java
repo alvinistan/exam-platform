@@ -21,7 +21,17 @@ import org.springframework.stereotype.Component;
 @Component
 public class PublishReadiness {
 
-    public record Readiness(boolean ready, List<String> blockers) {
+    /** The setup steps an administrator follows; each publishing problem points at the step that fixes it. */
+    public enum Step { DETAILS, STRUCTURE, QUESTIONS, MODES }
+
+    public record Issue(Step step, String message) {
+    }
+
+    /** {@code blockers} repeats the issue messages for clients written before setup steps existed. */
+    public record Readiness(boolean ready, List<String> blockers, List<Issue> issues) {
+        static Readiness of(List<Issue> issues) {
+            return new Readiness(issues.isEmpty(), issues.stream().map(Issue::message).toList(), List.copyOf(issues));
+        }
     }
 
     private final ExamRepository exams;
@@ -39,31 +49,31 @@ public class PublishReadiness {
     }
 
     public Readiness evaluate(ExamRow exam, ContentCounts counts) {
-        List<String> blockers = new ArrayList<>();
+        List<Issue> issues = new ArrayList<>();
         String categoryStatus = jdbc.sql("SELECT status FROM catalog.exam_category WHERE id = :id")
                 .param("id", exam.categoryId()).query(String.class).single();
         if (!"ACTIVE".equals(categoryStatus)) {
-            blockers.add("The exam's category is archived. Choose an active category.");
+            issues.add(new Issue(Step.DETAILS, "The exam's category is archived. Choose an active category."));
         }
         List<ModeSettings> enabled = modes.enabled(exam.id());
         if (enabled.isEmpty()) {
-            blockers.add("Enable at least one exam mode.");
+            issues.add(new Issue(Step.MODES, "Turn on at least one mode."));
         }
         if (counts.topics() == 0) {
-            blockers.add("Link at least one subject that has an active topic.");
+            issues.add(new Issue(Step.STRUCTURE, "Add a subject with at least one topic."));
         }
         for (ModeSettings mode : enabled) {
             if (counts.publishedMain() < mode.minCount()) {
-                blockers.add(ModeSettings.label(mode.mode()) + " needs at least " + mode.minCount()
-                        + " published questions; " + counts.publishedMain() + " published.");
+                issues.add(new Issue(Step.QUESTIONS, ModeSettings.label(mode.mode()) + " needs at least " + mode.minCount()
+                        + " ready questions; " + counts.publishedMain() + " ready."));
             }
         }
         if (exam.displayOrder() != null) {
-            exams.publishedAtPosition(exam.displayOrder(), exam.id()).ifPresent(other -> blockers.add(
+            exams.publishedAtPosition(exam.displayOrder(), exam.id()).ifPresent(other -> issues.add(new Issue(Step.DETAILS,
                     "Catalogue position " + exam.displayOrder() + " is used by the published exam \"" + other.title()
-                            + "\". Choose another position."));
+                            + "\". Choose another position.")));
         }
-        return new Readiness(blockers.isEmpty(), List.copyOf(blockers));
+        return Readiness.of(issues);
     }
 
     /**
@@ -81,7 +91,7 @@ public class PublishReadiness {
                 throw new ApiException(ProblemCode.PUBLISH_BLOCKED,
                         "This change would leave the published exam \"" + exam.title() + "\" unable to run. "
                                 + "Archive the exam first, or fix the problems listed.",
-                        Map.of("blockers", readiness.blockers()));
+                        Map.of("blockers", readiness.blockers(), "issues", readiness.issues()));
             }
         }
     }

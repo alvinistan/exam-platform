@@ -89,7 +89,11 @@ public class AdminContentController {
                 orZero(in.displayOrder()), in.status());
     }
 
-    public record TopicInput(@NotNull UUID moduleId, @NotBlank @Size(min = 2, max = 160) String title,
+    /**
+     * Give {@code subjectId} to add a topic straight under a subject (the exam setup shows Subject → Topics; the topic
+     * goes into the subject's first module, created if needed), or {@code moduleId} to choose the module.
+     */
+    public record TopicInput(UUID moduleId, UUID subjectId, @NotBlank @Size(min = 2, max = 160) String title,
                              @Min(0) @Max(100_000) Integer displayOrder,
                              @Size(max = 20) List<@NotNull UUID> prerequisiteTopicIds) {
     }
@@ -102,7 +106,11 @@ public class AdminContentController {
 
     @PostMapping("/topics")
     public ResponseEntity<TopicView> createTopic(@Valid @RequestBody TopicInput in) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(content.createTopic(CurrentUser.id(), in.moduleId(),
+        if ((in.moduleId() == null) == (in.subjectId() == null)) {
+            throw Requests.invalid("moduleId", "give either moduleId or subjectId");
+        }
+        UUID moduleId = in.moduleId() != null ? in.moduleId() : content.topicModule(CurrentUser.id(), in.subjectId());
+        return ResponseEntity.status(HttpStatus.CREATED).body(content.createTopic(CurrentUser.id(), moduleId,
                 in.title(), orZero(in.displayOrder()), in.prerequisiteTopicIds()));
     }
 

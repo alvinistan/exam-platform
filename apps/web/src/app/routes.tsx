@@ -1,21 +1,39 @@
 import { Navigate, type RouteObject } from 'react-router';
 import { PublicLayout } from '@/components/layout/PublicLayout';
 import {
+  AccessPage,
   AccountPage,
   AdminExamsPage,
   AdminLayout,
+  AttemptPage,
   CategoriesPage,
+  CheckoutCancelPage,
+  CheckoutPage,
+  CheckoutReturnPage,
   ContentLibraryPage,
-  ExamEditorPage,
+  DashboardPage,
+  ExamSetupIndex,
+  ExamSetupPage,
+  NewExamPage,
+  PlansPaymentsPage,
+  PromotionsPage,
+  FinancePage,
+  PaymentsPage,
+  PaymentHistoryPage,
+  ReceiptPage,
+  ProgressPage,
   QuestionEditorPage,
   QuestionImportPage,
   QuestionsPage,
+  StartPage,
+  TestPaymentPage,
   UsersPage,
 } from './lazyPages';
 import { SignInPage } from '@/features/auth/SignInPage';
 import { CataloguePage } from '@/features/exams/CataloguePage';
 import { ExamPage } from '@/features/exams/ExamPage';
 import { HomePage } from '@/features/home/HomePage';
+import { PlansPage } from '@/features/billing/PlansPage';
 import { NotFoundPage } from '@/features/NotFoundPage';
 import { RequireAuth, RequireRole } from '@/lib/auth/guards';
 
@@ -30,12 +48,87 @@ export const routes: RouteObject[] = [
       { index: true, element: <HomePage /> },
       { path: 'exams', element: <CataloguePage /> },
       { path: 'exams/:slug', element: <ExamPage /> },
+      {
+        path: 'exams/:slug/start/:mode',
+        element: (
+          <RequireAuth>
+            <StartPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'dashboard',
+        element: (
+          <RequireAuth>
+            <DashboardPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'progress',
+        element: (
+          <RequireAuth>
+            <ProgressPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'attempts/:attemptId',
+        element: (
+          <RequireAuth>
+            <AttemptPage />
+          </RequireAuth>
+        ),
+      },
+      { path: 'plans', element: <PlansPage /> },
+      {
+        path: 'checkout/:planId',
+        element: (
+          <RequireAuth>
+            <CheckoutPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'checkout/test/:transactionId',
+        element: (
+          <RequireAuth>
+            <TestPaymentPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        // PayHere sends the student back to these two; "return" doesn't mean the payment worked.
+        path: 'checkout/return',
+        element: (
+          <RequireAuth>
+            <CheckoutReturnPage />
+          </RequireAuth>
+        ),
+      },
+      { path: 'checkout/cancel', element: <CheckoutCancelPage /> },
       { path: 'signin', element: <SignInPage /> },
       {
         path: 'account',
         element: (
           <RequireAuth>
             <AccountPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'account/payments',
+        element: (
+          <RequireAuth>
+            <PaymentHistoryPage />
+          </RequireAuth>
+        ),
+      },
+      {
+        path: 'account/payments/:transactionId/receipt',
+        element: (
+          <RequireAuth>
+            <ReceiptPage />
           </RequireAuth>
         ),
       },
@@ -49,9 +142,15 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <Navigate to="exams" replace /> },
           { path: 'exams', element: <AdminExamsPage /> },
-          { path: 'exams/new', element: <ExamEditorPage /> },
-          { path: 'exams/:examId', element: <ExamEditorPage /> },
+          { path: 'exams/new', element: <NewExamPage /> },
+          { path: 'exams/:examId', element: <ExamSetupIndex /> },
+          { path: 'exams/:examId/:step', element: <ExamSetupPage /> },
           { path: 'categories', element: <CategoriesPage /> },
+          { path: 'access', element: <AccessPage /> },
+          { path: 'plans', element: <PlansPaymentsPage /> },
+          { path: 'promotions', element: <PromotionsPage /> },
+          { path: 'finance', element: <FinancePage /> },
+          { path: 'payments', element: <PaymentsPage /> },
           { path: 'content', element: <ContentLibraryPage /> },
           { path: 'questions', element: <QuestionsPage /> },
           { path: 'questions/new', element: <QuestionEditorPage /> },

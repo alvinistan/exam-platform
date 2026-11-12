@@ -1,6 +1,8 @@
-import { Link } from 'react-router';
+import { Link, Navigate } from 'react-router';
+import { useAuth } from '@/lib/auth/AuthContext';
 import { ArrowRight, BookOpenCheck, Sparkles, Timer } from 'lucide-react';
 import { Card, Skeleton, buttonClasses } from '@/components/ui';
+import { useExamAccess } from '@/features/access/api';
 import { ExamCard } from '@/features/exams/ExamCard';
 import { useCategories, useExams } from '@/features/exams/api';
 
@@ -8,7 +10,7 @@ const modes = [
   {
     icon: BookOpenCheck,
     title: 'Practice',
-    text: 'Choose subjects and topics, answer at your own pace and see the explanation after each question.',
+    text: 'Choose topics and a number of questions or minutes, and see the answer and explanation after each question.',
   },
   {
     icon: Timer,
@@ -17,12 +19,19 @@ const modes = [
   },
   {
     icon: Sparkles,
-    title: 'Guided practice',
-    text: 'Pick how many questions or how much time you have; the session adapts to what you need to revise.',
+    title: 'Adaptive exam',
+    text: 'Pick how many questions or how much time you have; each question adapts to how you answered the last one.',
   },
 ];
 
+/** Signed-in students start at their dashboard; everyone else sees the public home page. */
 export function HomePage() {
+  const { state } = useAuth();
+  if (state.status === 'signedIn') return <Navigate to="/dashboard" replace />;
+  return <PublicHome />;
+}
+
+function PublicHome() {
   return (
     <>
       <section className="border-b border-border bg-surface">
@@ -72,6 +81,7 @@ function FeaturedExams() {
   const featured = useExams({ featured: true, size: 10 });
   const categories = useCategories();
   const exams = featured.data?.items.slice(0, 6) ?? [];
+  const access = useExamAccess(exams.map((e) => e.id));
   const activeCategories = categories.data?.filter((c) => (c.examCount ?? 0) > 0) ?? [];
   const categoryName = (id: string) => categories.data?.find((c) => c.id === id)?.name;
 
@@ -104,7 +114,7 @@ function FeaturedExams() {
           <ul className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))]">
             {exams.map((exam) => (
               <li key={exam.id}>
-                <ExamCard exam={exam} categoryName={categoryName(exam.categoryId)} />
+                <ExamCard exam={exam} categoryName={categoryName(exam.categoryId)} access={access.data?.[exam.id]} />
               </li>
             ))}
           </ul>

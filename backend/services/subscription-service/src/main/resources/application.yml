@@ -28,6 +28,28 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+# Phase 8: catalogue read model and this service's login for internal calls (ADR-005, ADR-006).
+subscription:
+  catalog-feed:
+    enabled: ${CATALOG_FEED_ENABLED:true}
+    base-url: ${CATALOG_SERVICE_URL:http://localhost:8082}
+    interval: ${CATALOG_FEED_INTERVAL:2s}
+  service-client:
+    token-uri: ${IDENTITY_TOKEN_URI:http://localhost:8081/oauth2/token}
+    client-id: subscription-service
+    client-secret: ${SUBSCRIPTION_SERVICE_CLIENT_SECRET:}
+  # Phase 11 (ADR-011). TEST is a labelled stand-in where no money moves; it is refused under the prod profile.
+  payments:
+    provider: ${PAYMENT_PROVIDER:TEST}
+    public-base-url: ${PUBLIC_BASE_URL:http://localhost:8088}
+    payhere:
+      merchant-id: ${PAYHERE_MERCHANT_ID:}
+      merchant-secret: ${PAYHERE_MERCHANT_SECRET:}
+      sandbox: ${PAYHERE_SANDBOX:true}
+      # Phase 13: PayHere API key (Settings > API Keys) for automatic refunds; empty = refunds are recorded manually.
+      app-id: ${PAYHERE_APP_ID:}
+      app-secret: ${PAYHERE_APP_SECRET:}
+
 platform:
   security:
     # identity-service's public signing keys; every access token is verified against them (ADR-004).

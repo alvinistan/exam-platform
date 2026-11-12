@@ -77,8 +77,8 @@ export function QuestionsPage() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Questions</h1>
-          <p className="text-muted">Write, review and publish questions for every exam.</p>
+          <h1 className="text-2xl font-extrabold tracking-tight">Question bank</h1>
+          <p className="text-muted">Every question across all exams. To work on one exam, open it from Exams (step 3).</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link to="/admin/questions/import" className={buttonClasses('secondary')}>
@@ -250,7 +250,7 @@ export function QuestionsPage() {
                     <td className="px-4 py-3">
                       <div className="flex flex-col items-start gap-1">
                         <QuestionStatusBadge status={item.status} />
-                        {item.hasDraftChanges && <span className="text-[12.5px] text-warning-ink">Unpublished changes</span>}
+                        {item.hasDraftChanges && <span className="text-[12.5px] text-warning-ink">Changes not live yet</span>}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-ink-2">{difficultyLabels[item.difficulty]}</td>

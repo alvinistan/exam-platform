@@ -4,7 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * subscription-service: free-access policies, access decisions, plans, payments, subscriptions and entitlements.
+ * subscription-service: free attempts per exam type, access decisions, plans, payments, subscriptions and entitlements.
  *
  * <p>Scans {@code com.leenex.exam.platform} for the shared error model, correlation IDs and security baseline.
  */

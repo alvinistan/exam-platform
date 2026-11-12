@@ -103,6 +103,7 @@ class GatewayRoutingTests {
         "/api/admin/catalog/exams,            catalog",
         "/api/media/0123456789abcdef0123456789abcdef.png, catalog",
         "/api/attempts/estimate,              assessment",
+        "/api/progress/exams,                 assessment",
         "/api/admin/attempts,                 assessment",
         "/api/learning/topics,                learning",
         "/api/admin/learning/analytics,       learning",

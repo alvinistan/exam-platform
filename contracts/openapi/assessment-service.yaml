@@ -3,8 +3,8 @@ info:
   title: assessment-service
   version: 0.1.0
   description: >-
-    Attempts in all three modes: creation with a fixed question set, answering, server-enforced timing,
-    authoritative scoring and mode-dependent review. Routed under /api/attempts and /api/admin/attempts.
+    Attempts for Practice, Mock exam and Adaptive exam: a fixed question set chosen at start, answering with
+    immediate or after-submit feedback, server-enforced timing, authoritative scoring, results and review. Routed under /api/attempts and /api/admin/attempts.
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
@@ -14,6 +14,8 @@ servers:
 tags:
   - name: Attempts
     description: A student's own attempts
+  - name: Progress
+    description: A student's own performance profile (ADR-016)
   - name: Admin attempts
     description: Read-only attempt views for administrators
   - name: Internal
@@ -21,90 +23,63 @@ tags:
 security:
   - bearerAuth: []
 paths:
-  /api/attempts/estimate:
-    post:
-      tags: [Attempts]
-      operationId: estimateSession
-      summary: Preview a User-Friendly session before starting
-      description: Returns how many questions fit a time budget (SG-4) or how long a count will take, and whether the pool is short.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/StartAttemptRequest' }
-      responses:
-        '200':
-          description: Estimate.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [questionCount, estimatedSeconds, poolShort]
-                properties:
-                  questionCount: { type: integer }
-                  estimatedSeconds: { type: integer }
-                  poolShort: { type: boolean }
-                  availableQuestions: { type: integer }
-        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
-        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
-        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/attempts:
     get:
       tags: [Attempts]
       operationId: listMyAttempts
-      summary: My attempt history
+      summary: My recent attempts (newest first, at most 50)
       parameters:
-        - $ref: './common.yaml#/components/parameters/Page'
-        - $ref: './common.yaml#/components/parameters/Size'
         - { name: examId, in: query, schema: { type: string, format: uuid } }
-        - { name: status, in: query, schema: { type: string, enum: [IN_PROGRESS, SCORED] } }
       responses:
         '200':
-          description: Page of attempts, newest first.
+          description: Attempts, newest first.
           content:
             application/json:
-              schema:
-                type: object
-                required: [items, page]
-                properties:
-                  items: { type: array, items: { $ref: '#/components/schemas/AttemptSummary' } }
-                  page: { $ref: './common.yaml#/components/schemas/PageMeta' }
+              schema: { type: array, items: { $ref: '#/components/schemas/AttemptSummary' } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
     post:
       tags: [Attempts]
       operationId: startAttempt
       summary: Start an attempt
       description: >-
-        Checks access with subscription-service, selects and stores the question set, then returns it without answer keys.
-        Repeating the call with the same Idempotency-Key returns the same attempt. Starting a mock while one is active returns that one (TM-4).
+        Chooses the questions (topics take turns; questions seen in the last 7 days come last), asks subscription-service
+        whether the student may start (which counts one free attempt of that exam type), and stores the question set
+        with its answer key. Answers are never sent before they may be disclosed. Repeating the call with the same
+        Idempotency-Key returns the same attempt (200). A Mock exam lasts the minutes chosen, or for a question count
+        the questions' estimated solving times; never longer than the exam's mock time limit.
       parameters:
-        - $ref: './common.yaml#/components/parameters/IdempotencyKey'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Client-generated key (at most 100 characters). Recommended.
+          schema: { type: string, maxLength: 100 }
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/StartAttemptRequest' }
       responses:
-        '201':
-          description: Attempt created.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AttemptView' }
-        '200':
-          description: Existing attempt returned (same idempotency key, or active mock).
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/AttemptView' }
+        '201': { description: Attempt started., content: { application/json: { schema: { $ref: '#/components/schemas/AttemptView' } } } }
+        '200': { description: The attempt started earlier with the same Idempotency-Key., content: { application/json: { schema: { $ref: '#/components/schemas/AttemptView' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403':
-          description: SUBSCRIPTION_REQUIRED, SUBSCRIPTION_EXPIRED, PAYMENT_PENDING, FREE_ALLOWANCE_USED or MODE_DISABLED.
+          description: FREE_ALLOWANCE_USED (free attempts of this exam type used up), SUBSCRIPTION_REQUIRED or MODE_DISABLED.
           content:
             application/problem+json:
               schema: { $ref: './common.yaml#/components/schemas/Problem' }
-        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '404':
+          description: EXAM_UNAVAILABLE.
+          content:
+            application/problem+json:
+              schema: { $ref: './common.yaml#/components/schemas/Problem' }
         '409':
-          description: INSUFFICIENT_QUESTIONS.
+          description: CONFLICT when a Mock exam on this exam is already in progress; the problem has `attemptId` to resume it.
+          content:
+            application/problem+json:
+              schema: { $ref: './common.yaml#/components/schemas/Problem' }
+        '422':
+          description: INSUFFICIENT_QUESTIONS (no questions for the topics chosen).
           content:
             application/problem+json:
               schema: { $ref: './common.yaml#/components/schemas/Problem' }
@@ -113,20 +88,26 @@ paths:
     get:
       tags: [Attempts]
       operationId: getAttempt
-      summary: Resume an attempt
-      description: Returns the stored question set, saved answers, flags and server time. Other students' attempts return 404.
+      summary: An attempt with its questions, answers so far, and (once finished) the result and full review
+      description: >-
+        Finishes the attempt first if its time is up. Other students' attempts answer 404. The countdown is drawn from
+        expiresAt and serverNow, never from the client's clock.
       parameters:
         - $ref: '#/components/parameters/AttemptId'
       responses:
         '200': { description: Attempt., content: { application/json: { schema: { $ref: '#/components/schemas/AttemptView' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
-  /api/attempts/{attemptId}/responses/{position}:
+  /api/attempts/{attemptId}/answers/{position}:
     put:
       tags: [Attempts]
-      operationId: saveResponse
-      summary: Save or change an answer
-      description: Validated against the stored question; rejected after expiry plus grace (TM-2) or once finished.
+      operationId: saveAnswer
+      summary: Answer, change an answer or flag a question
+      description: >-
+        With immediate feedback (Practice, Adaptive, and Mock when set up so) the answer is checked and locked, and the
+        response includes the review. Otherwise the answer is saved and can be changed until submitting. `selected`
+        omitted changes only the flag. Answers more than 5 seconds after a Mock exam's end are refused (ATTEMPT_EXPIRED)
+        and the attempt is finished with the answers given in time.
       parameters:
         - $ref: '#/components/parameters/AttemptId'
         - { name: position, in: path, required: true, schema: { type: integer, minimum: 1 } }
@@ -136,95 +117,134 @@ paths:
           application/json:
             schema:
               type: object
-              required: [selectedLabels]
-              additionalProperties: false
               properties:
-                selectedLabels: { type: array, maxItems: 5, uniqueItems: true, items: { type: string, enum: [A, B, C, D, E] } }
+                selected: { type: array, maxItems: 5, items: { type: string, enum: [A, B, C, D, E] }, description: Display letters. }
                 flagged: { type: boolean }
-                timeSpentMs: { type: integer, minimum: 0 }
+                timeSpentMs: { type: integer, minimum: 0, description: Time spent on this question since the last save. }
       responses:
-        '200':
-          description: Saved.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [savedAt, serverNow]
-                properties:
-                  savedAt: { type: string, format: date-time }
-                  serverNow: { type: string, format: date-time }
-                  expiresAt: { type: [string, 'null'], format: date-time }
+        '200': { description: The question as it now stands., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionView' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
         '409':
-          description: ATTEMPT_EXPIRED, ATTEMPT_FINISHED or answer locked (practice).
+          description: ATTEMPT_EXPIRED, ATTEMPT_FINISHED, or CONFLICT when an answer that was already checked is changed.
           content:
             application/problem+json:
               schema: { $ref: './common.yaml#/components/schemas/Problem' }
-  /api/attempts/{attemptId}/responses/{position}/check:
-    post:
-      tags: [Attempts]
-      operationId: checkAnswer
-      summary: Check one answer (Practice with immediate feedback)
-      description: Locks the answer, scores it on the server and returns feedback. Refused (409) in modes without immediate feedback.
-      parameters:
-        - $ref: '#/components/parameters/AttemptId'
-        - { name: position, in: path, required: true, schema: { type: integer, minimum: 1 } }
-      responses:
-        '200': { description: Feedback., content: { application/json: { schema: { $ref: '#/components/schemas/QuestionReview' } } } }
-        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
-        '404': { $ref: './common.yaml#/components/responses/NotFound' }
-        '409': { $ref: './common.yaml#/components/responses/Conflict' }
   /api/attempts/{attemptId}/submit:
     post:
       tags: [Attempts]
       operationId: submitAttempt
-      summary: Submit and score
-      description: Idempotent; a repeated or concurrent submit returns the same result. Emits AttemptCompleted.
-      parameters:
-        - $ref: '#/components/parameters/AttemptId'
-        - $ref: './common.yaml#/components/parameters/IdempotencyKey'
-      responses:
-        '200': { description: Result., content: { application/json: { schema: { $ref: '#/components/schemas/AttemptResult' } } } }
-        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
-        '404': { $ref: './common.yaml#/components/responses/NotFound' }
-  /api/attempts/{attemptId}/result:
-    get:
-      tags: [Attempts]
-      operationId: getResult
-      summary: Get the result of a scored attempt
+      summary: Finish and mark the attempt
+      description: Idempotent; submitting a finished attempt returns it unchanged. Marked on the server from the stored answer key.
       parameters:
         - $ref: '#/components/parameters/AttemptId'
       responses:
-        '200': { description: Result., content: { application/json: { schema: { $ref: '#/components/schemas/AttemptResult' } } } }
+        '200': { description: The finished attempt with its result and review., content: { application/json: { schema: { $ref: '#/components/schemas/AttemptView' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
-        '409': { $ref: './common.yaml#/components/responses/Conflict' }
-  /api/attempts/{attemptId}/review:
+  /api/progress/overview:
     get:
-      tags: [Attempts]
-      operationId: getReview
-      summary: Question-by-question review
-      description: Only after scoring and only as far as the exam's result-visibility policy allows; premium explanations re-check entitlement.
+      tags: [Progress]
+      operationId: getProgressOverview
+      summary: The dashboard's picture of the student across all exams
+      description: >-
+        Totals, current streak (consecutive days with a marked answer up to today or yesterday, at most 60), the last
+        14 days of activity, the weakest topics across recently practised exams, and a summary per exam.
       parameters:
-        - $ref: '#/components/parameters/AttemptId'
-        - { name: filter, in: query, schema: { type: string, enum: [ALL, INCORRECT, CORRECT, FLAGGED], default: ALL } }
+        - name: tz
+          in: query
+          description: The student's time zone, so "today" is their today.
+          schema: { type: string, default: UTC, examples: [Asia/Colombo] }
       responses:
         '200':
-          description: Review items.
+          description: Overview.
           content:
             application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/QuestionReview' } }
+              schema:
+                type: object
+                required: [answered, correct, accuracy, finishedAttempts, streakDays, answeredThisWeek, activity, focus, exams]
+                properties:
+                  answered: { type: integer }
+                  correct: { type: integer }
+                  accuracy: { type: integer }
+                  finishedAttempts: { type: integer }
+                  streakDays: { type: integer, maximum: 60 }
+                  answeredThisWeek: { type: integer, description: The last 7 days including today. }
+                  activity:
+                    type: array
+                    description: 14 days, oldest first, including days without answers.
+                    items:
+                      type: object
+                      properties:
+                        day: { type: string, format: date }
+                        answered: { type: integer }
+                        correct: { type: integer }
+                  focus:
+                    type: array
+                    description: Up to 6 topics to practise next, weakest first.
+                    items:
+                      type: object
+                      properties:
+                        examId: { type: string, format: uuid }
+                        examTitle: { type: string }
+                        examSlug: { type: string }
+                        topicId: { type: string, format: uuid }
+                        title: { type: string }
+                        level: { type: integer }
+                        levelLabel: { type: string }
+                        recentAccuracy: { type: integer }
+                  exams: { type: array, items: { type: object } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
-        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
-        '404': { $ref: './common.yaml#/components/responses/NotFound' }
-        '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/progress/exams:
+    get:
+      tags: [Progress]
+      operationId: listExamsPractised
+      summary: Exams the student has practised, most recent first
+      responses:
+        '200':
+          description: One summary per exam.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [examId, title, slug, lastActivity, attempts, answered, accuracy, topicsNeedingWork]
+                  properties:
+                    examId: { type: string, format: uuid }
+                    title: { type: string }
+                    slug: { type: string }
+                    lastActivity: { type: string, format: date-time }
+                    attempts: { type: integer }
+                    answered: { type: integer }
+                    accuracy: { type: integer }
+                    topicsNeedingWork: { type: integer }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+  /api/progress/exams/{examId}:
+    get:
+      tags: [Progress]
+      operationId: getExamProgress
+      summary: Per-topic accuracy, level and status on one exam, what to practise next, and recent results
+      description: >-
+        Worked out from marked answers only (checked Practice and Adaptive answers, and Mock answers once the paper is
+        finished). Levels follow ADR-016: start at 2, move one step on at least 5 answers since the last change (up at
+        80% or more of the last 8, down below 40%).
+      parameters:
+        - { name: examId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Progress (empty lists before any marked answer).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExamProgress' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
   /api/admin/attempts:
     get:
       tags: [Admin attempts]
       operationId: adminListAttempts
-      summary: Browse attempts (read-only)
+      summary: Browse attempts (read-only) — planned, not implemented yet
       parameters:
         - $ref: './common.yaml#/components/parameters/Page'
         - $ref: './common.yaml#/components/parameters/Size'
@@ -248,7 +268,7 @@ paths:
     get:
       tags: [Internal]
       operationId: assessmentEventFeed
-      summary: Outbox event feed (AttemptStarted, AttemptCompleted)
+      summary: Outbox event feed (AttemptStarted, AttemptCompleted) — planned for the adaptive engine (Step B)
       parameters:
         - { name: after, in: query, required: true, schema: { type: integer, minimum: 0 } }
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
@@ -274,109 +294,187 @@ components:
   schemas:
     StartAttemptRequest:
       type: object
-      required: [examId, mode]
-      additionalProperties: false
+      required: [examId, mode, sizeBy]
       properties:
         examId: { type: string, format: uuid }
         mode: { $ref: './common.yaml#/components/schemas/Mode' }
-        topicIds: { type: array, items: { type: string, format: uuid } }
-        generation: { type: string, enum: [COUNT, TIME], default: COUNT }
-        count: { type: integer, minimum: 1, maximum: 500 }
-        seconds: { type: integer, enum: [600, 1200, 1800, 2700, 3600] }
-        adaptive: { type: boolean, description: Weight towards weak topics (AD-1). }
-        recommendationId: { type: string, format: uuid, description: Start from a recommendation in one click. }
+        topicIds: { type: array, maxItems: 100, items: { type: string, format: uuid }, description: Missing or empty means every topic. }
+        sizeBy: { type: string, enum: [COUNT, TIME] }
+        questionCount: { type: integer, minimum: 1, description: 'For COUNT; at most the exam type''s maximum (default 30).' }
+        minutes: { type: integer, minimum: 1, maximum: 180, description: For TIME; a Mock exam at most its time limit. }
     AttemptSummary:
       type: object
-      required: [id, examId, mode, status, startedAt]
+      required: [id, examId, examTitle, examSlug, mode, status, startedAt, questionCount]
       properties:
         id: { type: string, format: uuid }
         examId: { type: string, format: uuid }
+        examTitle: { type: string }
+        examSlug: { type: string }
         mode: { $ref: './common.yaml#/components/schemas/Mode' }
         status: { type: string, enum: [IN_PROGRESS, SCORED] }
         finishReason: { type: [string, 'null'], enum: [SUBMITTED, EXPIRED, ABANDONED, null] }
         startedAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
         finishedAt: { type: [string, 'null'], format: date-time }
-        scorePct: { type: [number, 'null'] }
-    AttemptView:
+        questionCount: { type: integer }
+        score: { type: [number, 'null'] }
+        maxScore: { type: [number, 'null'] }
+        percent: { type: [integer, 'null'] }
+        correct: { type: [integer, 'null'] }
+        incorrect: { type: [integer, 'null'] }
+        unanswered: { type: [integer, 'null'] }
+    QuestionView:
       type: object
-      required: [id, examId, mode, status, startedAt, serverNow, feedbackTiming, questions]
-      properties:
-        id: { type: string, format: uuid }
-        examId: { type: string, format: uuid }
-        mode: { $ref: './common.yaml#/components/schemas/Mode' }
-        status: { type: string, enum: [IN_PROGRESS, SCORED] }
-        startedAt: { type: string, format: date-time }
-        expiresAt: { type: [string, 'null'], format: date-time, description: 'The countdown is computed from this and serverNow, never from the client clock.' }
-        serverNow: { type: string, format: date-time }
-        feedbackTiming: { type: string, enum: [IMMEDIATE, AFTER_SUBMIT] }
-        questions:
-          type: array
-          items:
-            type: object
-            required: [position, answerType, stemHtml, options]
-            properties:
-              position: { type: integer }
-              answerType: { type: string, enum: [SINGLE, MULTI] }
-              difficulty: { $ref: './common.yaml#/components/schemas/Difficulty' }
-              stemHtml: { type: string }
-              stemMediaUrl: { type: [string, 'null'] }
-              stemMediaAlt: { type: [string, 'null'] }
-              options:
-                type: array
-                description: In this attempt's stored display order. No correctness information.
-                items:
-                  type: object
-                  required: [label, bodyHtml]
-                  properties:
-                    label: { type: string }
-                    bodyHtml: { type: string }
-                    mediaUrl: { type: [string, 'null'] }
-                    mediaAlt: { type: [string, 'null'] }
-              selectedLabels: { type: array, items: { type: string } }
-              flagged: { type: boolean }
-              locked: { type: boolean }
-    QuestionReview:
-      type: object
-      required: [position, selectedLabels, correctLabels, outcome]
+      required: [position, topicId, topicTitle, difficulty, answerType, estSeconds, stemHtml, options, selected, flagged, answered]
       properties:
         position: { type: integer }
         topicId: { type: string, format: uuid }
-        selectedLabels: { type: array, items: { type: string } }
+        topicTitle: { type: string }
+        difficulty: { $ref: './common.yaml#/components/schemas/Difficulty' }
+        answerType: { type: string, enum: [SINGLE, MULTI] }
+        estSeconds: { type: integer }
+        stemHtml: { type: string }
+        stemMediaUrl: { type: [string, 'null'] }
+        stemMediaAlt: { type: [string, 'null'] }
+        options:
+          type: array
+          description: In this attempt's display order, lettered A, B, C … No correctness information.
+          items:
+            type: object
+            required: [label, bodyHtml]
+            properties:
+              label: { type: string }
+              bodyHtml: { type: string }
+              mediaUrl: { type: [string, 'null'] }
+              mediaAlt: { type: [string, 'null'] }
+        selected: { type: array, items: { type: string } }
+        flagged: { type: boolean }
+        answered: { type: boolean }
+        review:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/Review'
+          description: Present once the answer was checked (immediate feedback) or the attempt is finished.
+        level: { type: [integer, 'null'], minimum: 1, maximum: 3, description: "The student's level on the topic when the question was chosen." }
+    Review:
+      type: object
+      required: [correctLabels, keyPoints, definitions, awarded, marks]
+      properties:
+        correct: { type: [boolean, 'null'], description: Null when unanswered. }
         correctLabels: { type: array, items: { type: string } }
-        outcome: { type: string, enum: [CORRECT, INCORRECT, UNANSWERED] }
-        awarded: { type: number }
         explanationHtml: { type: [string, 'null'] }
-        definitions: { type: array, items: { type: object } }
         keyPoints: { type: array, items: { type: string } }
-        misconception:
-          type: [object, 'null']
-          properties:
-            id: { type: string, format: uuid }
-            title: { type: string }
-            label: { type: string, enum: [POSSIBLE, REPEATED] }
+        definitions:
+          type: array
+          items:
+            type: object
+            properties:
+              term: { type: string }
+              meaning: { type: string }
+        awarded: { type: number }
+        marks: { type: number }
+    AttemptView:
+      type: object
+      required: [id, examId, examTitle, examSlug, mode, status, feedback, sizeBy, estimatedSeconds, startedAt, serverNow, topics, questions]
+      properties:
+        id: { type: string, format: uuid }
+        examId: { type: string, format: uuid }
+        examTitle: { type: string }
+        examSlug: { type: string }
+        mode: { $ref: './common.yaml#/components/schemas/Mode' }
+        status: { type: string, enum: [IN_PROGRESS, SCORED] }
+        finishReason: { type: [string, 'null'], enum: [SUBMITTED, EXPIRED, ABANDONED, null] }
+        feedback: { type: string, enum: [IMMEDIATE, AFTER_SUBMIT] }
+        sizeBy: { type: string, enum: [COUNT, TIME] }
+        requestedCount: { type: [integer, 'null'], description: May be more than the questions given when the pool is smaller. }
+        requestedMinutes: { type: [integer, 'null'] }
+        estimatedSeconds: { type: integer }
+        startedAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time, description: Mock exams only. }
+        finishedAt: { type: [string, 'null'], format: date-time }
+        serverNow: { type: string, format: date-time }
+        topics:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              title: { type: string }
+        questions: { type: array, items: { $ref: '#/components/schemas/QuestionView' } }
+        result:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/AttemptResult'
+        plannedCount:
+          type: integer
+          description: >-
+            Questions the attempt will have. An Adaptive exam gets its questions one at a time (each chosen after the
+            previous answer), so `questions` holds only those given so far.
     AttemptResult:
       type: object
-      required: [attemptId, score, maxScore, correct, incorrect, unanswered, durationSeconds, byTopic]
+      required: [score, maxScore, percent, correct, incorrect, unanswered, durationSeconds, byTopic]
       properties:
-        attemptId: { type: string, format: uuid }
-        finishReason: { type: string, enum: [SUBMITTED, EXPIRED, ABANDONED] }
         score: { type: number }
         maxScore: { type: number }
-        scorePct: { type: number }
+        percent: { type: integer }
         correct: { type: integer }
         incorrect: { type: integer }
         unanswered: { type: integer }
+        passMarkPct: { type: [integer, 'null'] }
+        passed: { type: [boolean, 'null'], description: Only when the exam type has a pass mark (SC-5). }
         durationSeconds: { type: integer }
-        passed: { type: [boolean, 'null'], description: Only when the exam has a pass mark (SC-5). }
         byTopic:
           type: array
           items:
             type: object
-            required: [topicId, correct, total]
+            required: [topicId, title, total, correct, incorrect, unanswered, percent]
             properties:
               topicId: { type: string, format: uuid }
-              correct: { type: integer }
+              title: { type: string }
               total: { type: integer }
+              correct: { type: integer }
+              incorrect: { type: integer }
+              unanswered: { type: integer }
+              percent: { type: integer }
+              level: { type: integer, minimum: 1, maximum: 3, description: "The student's level on the topic now." }
+              levelLabel: { type: string, enum: [Easy, Medium, Hard] }
+    ExamProgress:
+      type: object
+      required: [examId, answered, correct, accuracy, topics, focus, sessions]
+      properties:
+        examId: { type: string, format: uuid }
+        answered: { type: integer }
+        correct: { type: integer }
+        accuracy: { type: integer }
+        topics:
+          type: array
+          items:
+            type: object
+            required: [topicId, title, answered, correct, accuracy, recentAccuracy, level, levelLabel, status, levelTrend]
+            properties:
+              topicId: { type: string, format: uuid }
+              title: { type: string }
+              answered: { type: integer }
+              correct: { type: integer }
+              accuracy: { type: integer, description: All answers. }
+              recentAccuracy: { type: integer, description: The last 8 answers. }
+              level: { type: integer, minimum: 1, maximum: 3 }
+              levelLabel: { type: string, enum: [Easy, Medium, Hard] }
+              status: { type: string, enum: [STRONG, DEVELOPING, NEEDS_WORK, NOT_ENOUGH] }
+              levelTrend: { type: integer, enum: [-1, 0, 1], description: The last level move. }
+              lastPracticed: { type: string, format: date-time }
+        focus: { type: array, items: { type: string, format: uuid }, description: 'Topics to practise next, weakest first.' }
+        sessions:
+          type: array
+          description: The last 20 finished attempts, oldest first.
+          items:
+            type: object
+            properties:
+              attemptId: { type: string, format: uuid }
+              mode: { $ref: './common.yaml#/components/schemas/Mode' }
+              finishedAt: { type: string, format: date-time }
+              percent: { type: integer }
+              questions: { type: integer }
     AttemptCompletedEvent:
       type: object
       required: [seq, id, type, occurredAt, payload]

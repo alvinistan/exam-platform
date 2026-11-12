@@ -50,6 +50,7 @@ abstract class CatalogTestSupport {
         registry.add("platform.security.jwks-uri",
                 () -> "http://127.0.0.1:" + JWKS.getAddress().getPort() + "/.well-known/jwks.json");
         registry.add("catalog.media.dir", () -> MEDIA_DIR.toString());
+        registry.add("catalog.outbox.visible-after", () -> "0s");
     }
 
     static final java.nio.file.Path MEDIA_DIR = tempDir();

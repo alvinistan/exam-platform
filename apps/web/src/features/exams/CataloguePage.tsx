@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router';
 import { Search, SearchX } from 'lucide-react';
 import { Button, EmptyState, ErrorState, SelectField, Skeleton, TextField } from '@/components/ui';
 import { ApiError } from '@/lib/api/problem';
+import { useExamAccess } from '@/features/access/api';
 import { ExamCard } from './ExamCard';
 import { useCategories, useExams } from './api';
 
@@ -20,6 +21,7 @@ export function CataloguePage() {
   const [text, setText] = useState(q);
   const categories = useCategories();
   const exams = useExams({ q, category, page, size: PAGE_SIZE });
+  const access = useExamAccess(exams.data?.items.map((e) => e.id) ?? []);
 
   const update = (changes: Record<string, string | undefined>) => {
     const next = new URLSearchParams(params);
@@ -120,7 +122,7 @@ export function CataloguePage() {
           <ul className="grid gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr))]">
             {exams.data.items.map((exam) => (
               <li key={exam.id}>
-                <ExamCard exam={exam} categoryName={categoryName(exam.categoryId)} headingLevel="h2" />
+                <ExamCard exam={exam} categoryName={categoryName(exam.categoryId)} headingLevel="h2" access={access.data?.[exam.id]} />
               </li>
             ))}
           </ul>

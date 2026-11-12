@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router';
-import { FileQuestion, FileText, FolderTree, Library, Users } from 'lucide-react';
+import { ChartColumn, CreditCard, FileQuestion, FileText, FolderTree, Gift, KeyRound, Receipt, Users } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { PageLoading } from './PageLoading';
 
@@ -22,14 +22,26 @@ export function AdminLayout() {
           <NavLink to="/admin/exams" className={linkClass}>
             <FileText aria-hidden="true" className="size-4" /> Exams
           </NavLink>
+          <NavLink to="/admin/questions" className={linkClass}>
+            <FileQuestion aria-hidden="true" className="size-4" /> Question bank
+          </NavLink>
           <NavLink to="/admin/categories" className={linkClass}>
             <FolderTree aria-hidden="true" className="size-4" /> Categories
           </NavLink>
-          <NavLink to="/admin/content" className={linkClass}>
-            <Library aria-hidden="true" className="size-4" /> Content library
+          <NavLink to="/admin/access" className={linkClass}>
+            <KeyRound aria-hidden="true" className="size-4" /> Access
           </NavLink>
-          <NavLink to="/admin/questions" className={linkClass}>
-            <FileQuestion aria-hidden="true" className="size-4" /> Questions
+          <NavLink to="/admin/plans" className={linkClass}>
+            <CreditCard aria-hidden="true" className="size-4" /> Plans
+          </NavLink>
+          <NavLink to="/admin/finance" className={linkClass}>
+            <ChartColumn aria-hidden="true" className="size-4" /> Finance
+          </NavLink>
+          <NavLink to="/admin/payments" className={linkClass}>
+            <Receipt aria-hidden="true" className="size-4" /> Payments &amp; refunds
+          </NavLink>
+          <NavLink to="/admin/promotions" className={linkClass}>
+            <Gift aria-hidden="true" className="size-4" /> Promotions
           </NavLink>
           <NavLink to="/admin/users" className={linkClass}>
             <Users aria-hidden="true" className="size-4" /> Users

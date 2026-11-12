@@ -249,7 +249,8 @@ export const confirmImport = (importId: string) =>
 export const statusLabels: Record<QuestionStatus, string> = {
   DRAFT: 'Draft',
   REVIEWED: 'Reviewed',
-  PUBLISHED: 'Published',
+  // "Ready" is what administrators see; the API keeps the name PUBLISHED.
+  PUBLISHED: 'Ready',
   ARCHIVED: 'Archived',
 };
 

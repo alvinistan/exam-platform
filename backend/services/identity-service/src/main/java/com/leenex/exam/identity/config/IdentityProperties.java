@@ -3,6 +3,7 @@ package com.leenex.exam.identity.config;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
@@ -18,7 +19,31 @@ public record IdentityProperties(
         String adminBootstrapEmail,
         @DefaultValue Google google,
         @DefaultValue Jwt jwt,
-        @DefaultValue Refresh refresh) {
+        @DefaultValue Refresh refresh,
+        Map<String, ServiceClient> serviceClients) {
+
+    /** Clients with a secret; the rest are switched off. Keyed by client ID. */
+    public Map<String, ServiceClient> activeServiceClients() {
+        if (serviceClients == null) {
+            return Map.of();
+        }
+        Map<String, ServiceClient> active = new java.util.LinkedHashMap<>();
+        serviceClients.forEach((id, client) -> {
+            if (client != null && client.secret() != null && !client.secret().isBlank()) {
+                active.put(id, client);
+            }
+        });
+        return active;
+    }
+
+    /**
+     * A backend service that may obtain tokens with the client-credentials grant (ADR-005).
+     *
+     * @param secret shared secret from the environment; blank switches the client off
+     * @param scopes what its tokens may carry, for example {@code catalog.internal}
+     */
+    public record ServiceClient(String secret, List<String> scopes, @DefaultValue("5m") Duration tokenTtl) {
+    }
 
     /** Google OpenID Connect client (web application type). */
     public record Google(

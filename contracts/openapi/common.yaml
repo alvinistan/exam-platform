@@ -60,6 +60,10 @@ components:
           type: array
           description: With PUBLISH_BLOCKED, every reason the exam can't be (or stay) published.
           items: { type: string }
+        issues:
+          type: array
+          description: With PUBLISH_BLOCKED, the same reasons, each tagged with the setup step that fixes it.
+          items: { $ref: '#/components/schemas/SetupIssue' }
         errors:
           type: array
           description: Field-level validation errors.
@@ -88,17 +92,35 @@ components:
       enum: [STRONG, DEVELOPING, REVIEW, INSUFFICIENT]
     AccessStatus:
       type: object
-      description: The caller's access to an exam, decided by subscription-service.
-      required: [access, reason]
+      description: >-
+        The caller's access to an exam, decided by subscription-service. Each switched-on exam type has its own free
+        attempts; the caller's plans add unlimited attempts or a number per exam (Phase 11B). When both are used up,
+        that type is locked.
+      required: [available, premium, modes]
       properties:
-        access: { type: string, enum: [FREE, PREMIUM_UNLOCKED, LOCKED] }
-        reason:
-          type: string
-          description: Why, e.g. FA1_POSITION_2_OF_6, ACTIVE_SUBSCRIPTION, WELCOME_ALLOWANCE, SUBSCRIPTION_REQUIRED.
-        freeModes:
+        available: { type: boolean, description: 'False when the exam is unknown, a draft or archived.' }
+        premium: { type: boolean, description: One of the caller's active plans covers this exam. }
+        modes:
           type: array
-          items: { $ref: '#/components/schemas/Mode' }
-        welcomeAttemptsLeft: { type: integer, minimum: 0 }
+          items:
+            type: object
+            required: [mode, access, freeAttempts]
+            properties:
+              mode: { $ref: '#/components/schemas/Mode' }
+              access:
+                type: string
+                enum: [OPEN, PLAN, FREE, LOCKED]
+                description: 'OPEN: an unlimited plan. PLAN: plan attempts left (planLeft). FREE: free attempts left.'
+              freeAttempts: { type: integer, minimum: 0 }
+              used: { type: [integer, 'null'], description: Free attempts used; null for anonymous visitors. }
+              left: { type: [integer, 'null'], description: Free attempts left; null for anonymous visitors. }
+              planLeft: { type: [integer, 'null'], description: 'Attempts left in the caller''s limited plans for this exam type; null when no plan includes it.' }
+    SetupIssue:
+      type: object
+      required: [step, message]
+      properties:
+        step: { type: string, enum: [DETAILS, STRUCTURE, QUESTIONS, MODES] }
+        message: { type: string, examples: ['Mock exam needs at least 20 ready questions; 12 ready.'] }
   responses:
     BadRequest:
       description: Validation failed.

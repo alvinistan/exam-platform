@@ -32,8 +32,12 @@ export interface Problem {
   errors?: { field: string; message: string }[];
   /** With PUBLISH_BLOCKED: every reason an exam can't be (or stay) published. */
   blockers?: string[];
+  /** With PUBLISH_BLOCKED: the same reasons, each tagged with the setup step that fixes it. */
+  issues?: { step: 'DETAILS' | 'STRUCTURE' | 'QUESTIONS' | 'MODES'; message: string }[];
   /** With VALIDATION_FAILED on a workflow move: what the item still needs. */
   problems?: string[];
+  /** With CONFLICT on starting a mock exam: the one already in progress. */
+  attemptId?: string;
 }
 
 /** Thrown by the API client for any non-2xx response, and for network failures (status 0). */

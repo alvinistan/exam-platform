@@ -239,7 +239,7 @@ paths:
       operationId: publishExam
       summary: Publish an exam
       description: >-
-        Refused with PUBLISH_BLOCKED and a `blockers` list until FR-CAT-05 holds. Assigns the next catalogue position
+        Refused with PUBLISH_BLOCKED, `blockers` and step-tagged `issues` until FR-CAT-05 holds. Assigns the next catalogue position
         when none is set. Emits ExamPublished.
       parameters:
         - $ref: '#/components/parameters/ExamId'
@@ -263,6 +263,73 @@ paths:
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
         '409': { $ref: './common.yaml#/components/responses/Conflict' }
+  /api/admin/catalog/exams/{examId}/restore:
+    post:
+      tags: [Admin exams]
+      operationId: restoreExam
+      summary: Restore an archived exam as a draft
+      description: The exam keeps its address and settings and can be published again. Emits ExamRestored.
+      parameters:
+        - $ref: '#/components/parameters/ExamId'
+      responses:
+        '200': { description: Restored as DRAFT., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExamDetail' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: The exam isn't archived (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/catalog/exams/{examId}/subjects:
+    post:
+      tags: [Admin exams]
+      operationId: linkExamSubject
+      summary: Add a subject to the exam (existing, or new by title)
+      description: >-
+        Send exactly one of `subjectId` (link an existing active subject) or `title` (create a subject and link it).
+        Used by the guided setup's "Subjects & topics" step.
+      parameters:
+        - $ref: '#/components/parameters/ExamId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subjectId: { type: string, format: uuid }
+                title: { type: string, minLength: 2, maxLength: 160 }
+      responses:
+        '200': { description: Linked., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExamDetail' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: Already linked (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/catalog/exams/{examId}/subjects/{subjectId}:
+    delete:
+      tags: [Admin exams]
+      operationId: unlinkExamSubject
+      summary: Remove a subject from the exam (the subject stays in the library)
+      parameters:
+        - $ref: '#/components/parameters/ExamId'
+        - { name: subjectId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Unlinked., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExamDetail' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: A published exam would stop being publishable (PUBLISH_BLOCKED)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/catalog/sample-exams/ol-science:
+    post:
+      tags: [Admin exams]
+      operationId: createSampleExam
+      summary: Create the O/L Science sample exam
+      description: >-
+        Creates a complete, clearly labelled draft exam ("O/L Science Revision (sample)"): category, subject, 3 modules,
+        6 topics, 24 ready questions, and Practice and Mock exam turned on. Each call creates a new copy with its own
+        address (ol-science-sample, ol-science-sample-2, …).
+      responses:
+        '201': { description: Created as DRAFT., content: { application/json: { schema: { $ref: '#/components/schemas/AdminExamDetail' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/catalog/exams/{examId}/modes:
     get:
       tags: [Admin exams]
@@ -390,15 +457,19 @@ paths:
     post:
       tags: [Admin exams]
       operationId: createTopic
-      summary: Add a topic to a module
+      summary: Add a topic to a subject (or a chosen module)
+      description: >-
+        Give subjectId to add the topic straight under a subject, as the exam setup does (the topic goes into the
+        subject's first module, created if needed), or moduleId to choose the module. Exactly one of the two.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [moduleId, title]
+              required: [title]
               properties:
+                subjectId: { type: string, format: uuid }
                 moduleId: { type: string, format: uuid }
                 title: { type: string, minLength: 2, maxLength: 160 }
                 displayOrder: { type: integer, minimum: 0 }
@@ -524,8 +595,8 @@ paths:
       operationId: transitionQuestion
       summary: Move a question through its workflow (FR-QB-03)
       description: >-
-        DRAFT→REVIEWED and →PUBLISHED need FR-QB-04 to hold (400 VALIDATION_FAILED with `problems`). REVIEWED→PUBLISHED
-        freezes the version; PUBLISHED→PUBLISHED publishes pending edits. REVIEWED→DRAFT and ARCHIVED→DRAFT send it back;
+        DRAFT→REVIEWED and →PUBLISHED need FR-QB-04 to hold (400 VALIDATION_FAILED with `problems`). DRAFT→PUBLISHED and
+        REVIEWED→PUBLISHED freeze the version (review is optional; the web app calls PUBLISHED "Ready"); PUBLISHED→PUBLISHED publishes pending edits. REVIEWED→DRAFT and ARCHIVED→DRAFT send it back;
         any status→ARCHIVED retires it. Leaving PUBLISHED is refused with PUBLISH_BLOCKED if a published exam would no
         longer have enough questions.
       parameters:
@@ -755,53 +826,55 @@ paths:
             image/jpeg: { schema: { type: string, format: binary } }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
 
-  /internal/question-selection:
+  /internal/exams/{examId}/question-pool:
+    get:
+      tags: [Internal]
+      operationId: getQuestionPool
+      summary: The exam's settings, topics and published questions with answer keys (assessment-service)
+      description: >-
+        Service token with scope catalog.internal only; never routed by the gateway. assessment-service chooses the
+        questions itself because it knows what each student has seen. Main bank only; at most 5000 questions.
+      parameters:
+        - { name: examId, in: path, required: true, schema: { type: string, format: uuid } }
+        - name: topicIds
+          in: query
+          description: Only these topics (topics outside the exam are ignored). Missing means every active topic.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Pool.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuestionPool' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+  /internal/question-versions:
     post:
       tags: [Internal]
-      operationId: selectQuestions
-      summary: Select a question set (assessment-service)
-      description: >-
-        Applies SG-1..SG-6 against the permitted bank and returns versions with answer keys. Only callable with a
-        service token (scope catalog.internal); never routed by the gateway. Fails with INSUFFICIENT_QUESTIONS when the pool is too small.
+      operationId: getQuestionVersions
+      summary: Display content of published question versions (no answer keys)
+      description: Image links are signed and short-lived, so callers fetch content when they show it.
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SelectionRequest' }
+            schema:
+              type: object
+              required: [versionIds]
+              properties:
+                versionIds: { type: array, minItems: 1, maxItems: 500, items: { type: string, format: uuid } }
       responses:
         '200':
-          description: Selected questions with answer keys (for assessment-service's snapshot only).
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [questions, estimatedSeconds]
-                properties:
-                  questions: { type: array, items: { $ref: '#/components/schemas/SelectedQuestion' } }
-                  estimatedSeconds: { type: integer }
-                  substitutions: { type: array, items: { type: string } }
-        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
-        '409': { $ref: './common.yaml#/components/responses/Conflict' }
-  /internal/question-versions:
-    get:
-      tags: [Internal]
-      operationId: getQuestionVersions
-      summary: Display content of frozen question versions (no answer keys)
-      description: Versions are immutable once published, so callers may cache responses indefinitely.
-      parameters:
-        - name: ids
-          in: query
-          required: true
-          style: form
-          explode: false
-          schema: { type: array, maxItems: 200, items: { type: string, format: uuid } }
-      responses:
-        '200':
-          description: Display content; explanations included separately for post-disclosure use.
+          description: Display content, including explanations for use after disclosure.
           content:
             application/json:
               schema: { type: array, items: { $ref: '#/components/schemas/QuestionDisplay' } }
+        '400': { description: A version doesn't exist or isn't published. }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /internal/events:
     get:
       tags: [Internal]
@@ -959,7 +1032,8 @@ components:
       allOf:
         - $ref: '#/components/schemas/ExamSummary'
         - type: object
-          required: [status, version, publishedQuestionCount, trialQuestionCount, topicCount, publishReadiness]
+          required: [status, version, publishedQuestionCount, trialQuestionCount, topicCount, publishReadiness,
+                     draftQuestionCount, subjectCount]
           properties:
             status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
             publishedAt: { type: [string, 'null'], format: date-time }
@@ -968,12 +1042,15 @@ components:
             publishedQuestionCount: { type: integer, description: Published Main-bank questions in the exam's active topics. }
             trialQuestionCount: { type: integer, description: Published Trial-bank questions (information only). }
             topicCount: { type: integer, description: Active topics reachable through linked subjects. }
+            draftQuestionCount: { type: integer, description: Main-bank questions in those topics not yet ready (DRAFT or REVIEWED). }
+            subjectCount: { type: integer, description: Active subjects linked to the exam. }
             publishReadiness:
               type: object
-              required: [ready, blockers]
+              required: [ready, blockers, issues]
               properties:
                 ready: { type: boolean }
-                blockers: { type: array, items: { type: string }, examples: [['MOCK needs 40 published questions; 12 published']] }
+                blockers: { type: array, items: { type: string }, examples: [['Mock exam needs at least 40 ready questions; 12 ready.']] }
+                issues: { type: array, items: { $ref: './common.yaml#/components/schemas/SetupIssue' } }
     AdminExamDetail:
       allOf:
         - $ref: '#/components/schemas/AdminExam'
@@ -1065,13 +1142,14 @@ components:
             hard: { type: integer, minimum: 0, maximum: 100 }
         shuffleQuestions: { type: boolean }
         shuffleOptions: { type: boolean }
-        feedbackTiming: { type: string, enum: [IMMEDIATE, AFTER_SUBMIT], description: MOCK must use AFTER_SUBMIT. }
+        feedbackTiming: { type: string, enum: [IMMEDIATE, AFTER_SUBMIT], description: PRACTICE and USER_FRIENDLY must use IMMEDIATE; MOCK may use either. }
         resultVisibility: { type: string, enum: [SCORE_ONLY, SCORE_AND_ANSWERS, FULL] }
         negativeMark: { type: number, minimum: 0, maximum: 1 }
         passMarkPct: { type: [integer, 'null'], minimum: 1, maximum: 100 }
         allowTopicChoice: { type: boolean }
         adaptiveEnabled: { type: boolean, description: Stored for the adaptive engine (later phase); not shown in admin screens yet. }
         maxRetakes: { type: [integer, 'null'], minimum: 0 }
+        freeAttempts: { type: integer, minimum: 0, maximum: 1000, description: 'Attempts of this exam type a student may start without Premium. Default 3 (MOCK: 1).' }
     ModeConfig:
       type: object
       required: [mode, enabled, version, saved]
@@ -1097,6 +1175,7 @@ components:
         passMarkPct: { type: [integer, 'null'] }
         allowTopicChoice: { type: boolean }
         adaptiveEnabled: { type: boolean }
+        freeAttempts: { type: integer, minimum: 0 }
         maxRetakes: { type: [integer, 'null'] }
         version: { type: integer }
         saved: { type: boolean, description: False while the mode has never been saved (values are suggested defaults). }
@@ -1123,7 +1202,14 @@ components:
         topicId: { type: string, format: uuid }
         bank: { $ref: '#/components/schemas/Bank', description: Required on create; must match on save. }
         answerType: { type: string, enum: [SINGLE, MULTI] }
-        stemHtml: { type: string, maxLength: 20000, description: Sanitised server-side with an allow-list. Text or an image is required. }
+        stemHtml:
+          type: string
+          maxLength: 20000
+          description: >-
+            Sanitised server-side with an allow-list. Text or an image is required. Formulas are LaTeX text between \( and
+            \) or \[ and \] (typeset by KaTeX in the browser); each must close within the same run of unformatted text,
+            be non-empty and at most 1000 characters (400 on the field otherwise). The same applies to option bodies, the
+            explanation, key points and definition meanings.
         stemMediaKey: { type: string }
         stemMediaAlt: { type: string, maxLength: 250 }
         options: { type: array, maxItems: 5, items: { $ref: '#/components/schemas/OptionInput' }, description: Drafts may have fewer than 4. }
@@ -1262,40 +1348,53 @@ components:
               row: { type: integer, description: Spreadsheet row number (the header is row 1). }
               column: { type: string }
               message: { type: string }
-    SelectionRequest:
+    QuestionPool:
       type: object
-      required: [examId, mode, bank, topicIds, generation]
+      required: [examId, title, slug, status, modes, topics, questions]
       properties:
         examId: { type: string, format: uuid }
-        mode: { $ref: './common.yaml#/components/schemas/Mode' }
-        bank: { type: string, enum: [TRIAL, MAIN] }
-        topicIds: { type: array, minItems: 1, items: { type: string, format: uuid } }
-        generation: { type: string, enum: [COUNT, TIME, FIXED] }
-        count: { type: integer, minimum: 1 }
-        seconds: { type: integer, minimum: 60 }
-        topicWeights: { type: object, additionalProperties: { type: number } }
-        difficultyMix: { type: object, additionalProperties: { type: integer } }
-        excludeQuestionIds: { type: array, items: { type: string, format: uuid } }
-        preferQuestionIds: { type: array, items: { type: string, format: uuid } }
-    SelectedQuestion:
-      type: object
-      required: [questionId, versionId, topicId, difficulty, estSeconds, answerType, labels, correctLabels, marks]
-      properties:
-        questionId: { type: string, format: uuid }
-        versionId: { type: string, format: uuid }
-        topicId: { type: string, format: uuid }
-        difficulty: { $ref: './common.yaml#/components/schemas/Difficulty' }
-        estSeconds: { type: integer }
-        answerType: { type: string, enum: [SINGLE, MULTI] }
-        labels: { type: array, items: { type: string } }
-        correctLabels: { type: array, items: { type: string } }
-        misconceptionByLabel: { type: object, additionalProperties: { type: string, format: uuid } }
-        marks: { type: number }
+        title: { type: string }
+        slug: { type: string }
+        status: { type: string, enum: [DRAFT, PUBLISHED, ARCHIVED] }
+        modes: { type: array, items: { $ref: '#/components/schemas/ModeConfig' } }
+        topics:
+          type: array
+          items:
+            type: object
+            required: [id, title, subjectId, subjectTitle]
+            properties:
+              id: { type: string, format: uuid }
+              title: { type: string }
+              subjectId: { type: string, format: uuid }
+              subjectTitle: { type: string }
+        questions:
+          type: array
+          items:
+            type: object
+            required: [questionId, versionId, topicId, answerType, difficulty, estSeconds, marks, options]
+            properties:
+              questionId: { type: string, format: uuid }
+              versionId: { type: string, format: uuid }
+              topicId: { type: string, format: uuid }
+              answerType: { type: string, enum: [SINGLE, MULTI] }
+              difficulty: { $ref: './common.yaml#/components/schemas/Difficulty' }
+              estSeconds: { type: integer }
+              marks: { type: number }
+              options:
+                type: array
+                items:
+                  type: object
+                  required: [label, correct]
+                  properties:
+                    label: { type: string }
+                    correct: { type: boolean }
+                    misconceptionId: { type: [string, 'null'], format: uuid }
     QuestionDisplay:
       type: object
-      required: [versionId, stemHtml, options]
+      required: [versionId, questionId, stemHtml, options]
       properties:
         versionId: { type: string, format: uuid }
+        questionId: { type: string, format: uuid }
         stemHtml: { type: string }
         stemMediaUrl: { type: [string, 'null'], description: Short-lived signed URL. }
         stemMediaAlt: { type: [string, 'null'] }
@@ -1310,7 +1409,13 @@ components:
               mediaUrl: { type: [string, 'null'] }
               mediaAlt: { type: [string, 'null'] }
         explanationHtml: { type: [string, 'null'] }
-        definitions: { type: array, items: { type: object } }
+        definitions:
+          type: array
+          items:
+            type: object
+            properties:
+              term: { type: string }
+              meaning: { type: string }
         keyPoints: { type: array, items: { type: string } }
     EventEnvelope:
       type: object
@@ -1318,6 +1423,10 @@ components:
       properties:
         seq: { type: integer }
         id: { type: string, format: uuid }
-        type: { type: string, enum: [ExamPublished, ExamUpdated, ExamArchived] }
+        type: { type: string, enum: [ExamPublished, ExamUpdated, ExamArchived, ExamRestored] }
         occurredAt: { type: string, format: date-time }
-        payload: { type: object }
+        payload:
+          type: object
+          description: >-
+            examId, slug, title, categoryId, displayOrder, status, version, modes (switched on) and freeAttempts
+            (per switched-on mode, e.g. {"PRACTICE": 3, "MOCK": 1}).

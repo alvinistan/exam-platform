@@ -139,7 +139,8 @@ public class ExamRepository {
                 .query(Integer.class).single();
     }
 
-    public record ContentCounts(int topics, int publishedMain, int publishedTrial) {
+    /** {@code draftMain}: Main-bank questions not yet ready (draft or reviewed), shown during setup. */
+    public record ContentCounts(int topics, int publishedMain, int publishedTrial, int draftMain, int subjects) {
     }
 
     /** Active topics and published questions per bank across the exam's content tree (FR-CAT-05). */
@@ -150,10 +151,15 @@ public class ExamRepository {
                        (SELECT count(*) FROM bank_main.question q
                         WHERE q.status = 'PUBLISHED' AND q.topic_id IN (SELECT id FROM topics)) AS main,
                        (SELECT count(*) FROM bank_trial.question q
-                        WHERE q.status = 'PUBLISHED' AND q.topic_id IN (SELECT id FROM topics)) AS trial
+                        WHERE q.status = 'PUBLISHED' AND q.topic_id IN (SELECT id FROM topics)) AS trial,
+                       (SELECT count(*) FROM bank_main.question q
+                        WHERE q.status IN ('DRAFT', 'REVIEWED') AND q.topic_id IN (SELECT id FROM topics)) AS drafts,
+                       (SELECT count(*) FROM catalog.exam_subject es JOIN catalog.subject s ON s.id = es.subject_id
+                        WHERE es.exam_id = :id AND s.status = 'ACTIVE') AS subjects
                 """)
                 .param("id", examId)
-                .query((rs, row) -> new ContentCounts(rs.getInt("topics"), rs.getInt("main"), rs.getInt("trial")))
+                .query((rs, row) -> new ContentCounts(rs.getInt("topics"), rs.getInt("main"), rs.getInt("trial"),
+                        rs.getInt("drafts"), rs.getInt("subjects")))
                 .single();
     }
 

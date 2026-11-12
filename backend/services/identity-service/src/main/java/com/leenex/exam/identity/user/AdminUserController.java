@@ -77,6 +77,18 @@ public class AdminUserController {
         return users.names(Set.copyOf(ids));
     }
 
+    /**
+     * Names and emails for up to 100 user IDs, for finance screens (who paid, whose plan ends soon) and their CSV
+     * export. Separate from {@link #names} so screens that only show who changed a record don't receive emails.
+     */
+    @GetMapping("/contacts")
+    public List<UserRepository.UserContact> contacts(@RequestParam List<UUID> ids) {
+        if (ids.isEmpty() || ids.size() > 100) {
+            throw new ApiException(ProblemCode.VALIDATION_FAILED, "Give between 1 and 100 user IDs.");
+        }
+        return users.contacts(Set.copyOf(ids));
+    }
+
     @PutMapping("/{userId}/roles/ADMIN")
     public ResponseEntity<Void> grantAdmin(@PathVariable UUID userId) {
         users.grantAdmin(CurrentUser.id(), userId);

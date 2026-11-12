@@ -19,7 +19,7 @@ tags:
   - name: Payments
     description: Payment-provider callbacks
   - name: Admin billing
-    description: Policies, plans, payments and entitlements (Administrator only)
+    description: Free attempts overview, plans, payments and entitlements (Administrator only)
   - name: Internal
     description: Service-to-service only
 security:
@@ -30,7 +30,7 @@ paths:
       tags: [Access]
       operationId: getExamAccess
       summary: Access status for a list of exams
-      description: Anonymous callers get the policy view (Free or Locked); signed-in callers also see subscriptions and allowances.
+      description: Anonymous callers see each exam type's free attempts; signed-in callers also see how many they have left.
       security: [{}, { bearerAuth: [] }]
       parameters:
         - name: examIds
@@ -48,45 +48,120 @@ paths:
                 type: object
                 additionalProperties: { $ref: './common.yaml#/components/schemas/AccessStatus' }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
-  /api/plans:
+  /api/access/me:
     get:
-      tags: [Plans]
-      operationId: listPlans
-      summary: Active plans
-      security: [{}, { bearerAuth: [] }]
+      tags: [Access]
+      operationId: getMyAccess
+      summary: The caller's plan
       responses:
         '200':
-          description: Active plans in display order.
-          content:
-            application/json:
-              schema: { type: array, items: { $ref: '#/components/schemas/Plan' } }
-        '429':
-          $ref: './common.yaml#/components/responses/TooManyRequests'
-  /api/subscriptions/me:
-    get:
-      tags: [Plans]
-      operationId: getMySubscription
-      summary: My subscription status and history
-      responses:
-        '200':
-          description: Current status (computed at request time) and history.
+          description: Premium status.
           content:
             application/json:
               schema:
                 type: object
-                required: [status, history]
+                required: [premium]
                 properties:
-                  status: { type: string, enum: [FREE, ACTIVE, EXPIRED, PAYMENT_PENDING] }
-                  activeUntil: { type: [string, 'null'], format: date-time }
-                  renewalReminder: { type: boolean, description: True within 7 days of expiry (SB-4). }
-                  history: { type: array, items: { $ref: '#/components/schemas/SubscriptionPeriod' } }
+                  premium: { type: boolean }
+                  entitlement:
+                    type: [object, 'null']
+                    properties:
+                      source: { type: string, enum: [SUBSCRIPTION, MANUAL, CAMPAIGN] }
+                      endsAt: { type: string, format: date-time }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+  /api/plans:
+    get:
+      tags: [Plans]
+      operationId: listPlans
+      summary: Plans on sale
+      security: [{}, { bearerAuth: [] }]
+      parameters:
+        - { name: examId, in: query, required: false, description: Only plans that include this exam., schema: { type: string, format: uuid } }
+        - { name: categoryId, in: query, required: false, description: 'Only plans grouped under this category (bundles).', schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Active plans in display order, and which payment provider is configured.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [provider, testPayments, plans]
+                properties:
+                  provider: { type: string, enum: [PAYHERE, TEST] }
+                  testPayments: { type: boolean, description: 'True for the labelled TEST stand-in: no money moves and pages must say so.' }
+                  plans: { type: array, items: { $ref: '#/components/schemas/PublicPlan' } }
+        '429':
+          $ref: './common.yaml#/components/responses/TooManyRequests'
+  /api/plans/offers:
+    get:
+      tags: [Plans]
+      operationId: listOffers
+      summary: Free access open to every student right now
+      security: [{}, { bearerAuth: [] }]
+      responses:
+        '200':
+          description: Campaigns open to everyone, ending soonest first. Campaigns for chosen students are not listed.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Offer' } }
+        '429':
+          $ref: './common.yaml#/components/responses/TooManyRequests'
+  /api/subscriptions/quote:
+    post:
+      tags: [Plans]
+      operationId: quotePrice
+      summary: The price a student would pay now
+      description: >-
+        The sale price while a sale is on, less the discount code. For showing only: checkout works the price out
+        again. A code that can't be used is a 400 with the reason on the code field. Rate limited at the gateway.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planId]
+              properties:
+                planId: { type: string, format: uuid }
+                currency: { type: string, enum: [LKR, USD], default: LKR }
+                code: { type: [string, 'null'], maxLength: 40, description: 'A discount code; case does not matter.' }
+      responses:
+        '200': { description: The price., content: { application/json: { schema: { $ref: '#/components/schemas/Quote' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '429': { $ref: './common.yaml#/components/responses/TooManyRequests' }
+  /api/subscriptions/me:
+    get:
+      tags: [Plans]
+      operationId: getMySubscription
+      summary: My active plans with attempts left, subscription periods and recent payments
+      responses:
+        '200':
+          description: Computed at request time.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [premium, plans, periods, payments]
+                properties:
+                  premium: { type: boolean, description: At least one plan is active. }
+                  plans: { type: array, items: { $ref: '#/components/schemas/ActivePlan' } }
+                  premiumEndsAt: { type: [string, 'null'], format: date-time, description: 'When the last active plan ends.' }
+                  periods: { type: array, items: { $ref: '#/components/schemas/SubscriptionPeriod' } }
+                  payments: { type: array, maxItems: 10, items: { $ref: '#/components/schemas/Payment' } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
   /api/subscriptions/checkout:
     post:
       tags: [Plans]
       operationId: startCheckout
-      summary: Start checkout for a plan
-      description: Creates a PENDING transaction (price copied from the plan) and returns the provider's hosted checkout URL. Nothing is activated here.
+      summary: Start paying for a plan
+      description: >-
+        Creates a PENDING payment (plan name, length and price copied from the plan; the sale price while a sale is on,
+        less the discount code) and returns where the browser goes next. For PayHere that is a form POST to PayHere's
+        checkout with signed fields; for TEST it is the labelled test page. When the code makes the plan free, the
+        payment is FREE and already SUCCEEDED, and the browser goes to the return page. The same Idempotency-Key returns
+        the same payment.
       parameters:
         - $ref: './common.yaml#/components/parameters/IdempotencyKey'
       requestBody:
@@ -98,99 +173,146 @@ paths:
               required: [planId]
               properties:
                 planId: { type: string, format: uuid }
+                currency: { type: string, enum: [LKR, USD], default: LKR, description: The plan must have a price in this currency. }
+                code: { type: [string, 'null'], maxLength: 40, description: 'A discount code; a code that cannot be used is a 400 on the code field.' }
+                customer:
+                  type: object
+                  description: "Buyer details PayHere requires on its form; required for PayHere (400 on the customer field otherwise), not needed when the plan is free with a code. Passed through, not stored."
+                  required: [firstName, lastName, email, phone, address, city, country]
+                  properties:
+                    firstName: { type: string, maxLength: 50 }
+                    lastName: { type: string, maxLength: 50 }
+                    email: { type: string, format: email, maxLength: 100 }
+                    phone: { type: string, pattern: '^\+?[0-9 ()-]{7,20}$' }
+                    address: { type: string, maxLength: 100 }
+                    city: { type: string, maxLength: 50 }
+                    country: { type: string, maxLength: 50 }
       responses:
         '201':
-          description: Checkout created.
+          description: Payment created (or the one created earlier with this key).
           content:
             application/json:
               schema:
                 type: object
-                required: [transactionId, checkoutUrl, sandbox]
+                required: [transactionId, provider, status, action, method, fields]
                 properties:
                   transactionId: { type: string, format: uuid }
-                  checkoutUrl: { type: string, format: uri }
-                  sandbox: { type: boolean }
+                  provider: { type: string, enum: [PAYHERE, TEST, FREE] }
+                  status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
+                  action: { type: string, format: uri }
+                  method: { type: string, enum: [POST, GET] }
+                  fields:
+                    type: object
+                    additionalProperties: { type: string }
+                    description: Form fields to post to action (PayHere merchant_id, order_id, amount, currency, hash, …); empty for TEST.
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: The key was already used for a different plan (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
         '429': { $ref: './common.yaml#/components/responses/TooManyRequests' }
+  /api/subscriptions/payments:
+    get:
+      tags: [Subscriptions]
+      operationId: myPayments
+      summary: The student's own payments, newest first (at most 100), with refunds
+      responses:
+        '200': { description: Payments., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Payment' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
   /api/subscriptions/checkout/{transactionId}:
     get:
       tags: [Plans]
       operationId: getCheckoutStatus
-      summary: Poll a checkout's status (return page)
+      summary: A payment's status (polled by the return page)
+      description: The result comes only from the provider's verified notification; the return page never activates anything.
       parameters:
         - { name: transactionId, in: path, required: true, schema: { type: string, format: uuid } }
       responses:
-        '200':
-          description: Status only; the return page never activates anything.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status]
-                properties:
-                  status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
-                  activeUntil: { type: [string, 'null'], format: date-time }
+        '200': { description: The payment., content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
-  /api/payments/webhooks/{provider}:
+  /api/payments/webhooks/payhere:
     post:
       tags: [Payments]
-      operationId: receiveWebhook
-      summary: Payment-provider webhook
+      operationId: receivePayHereNotification
+      summary: PayHere notify_url
       description: >-
-        Signature verified against the raw body with the provider's secret and timestamp tolerance (5 min) before parsing.
-        Recorded once per provider event id (SB-9); success activates the subscription and entitlement in one transaction.
+        Public; authenticity comes from md5sig = UPPER(MD5(merchant_id + order_id + payhere_amount + payhere_currency +
+        status_code + UPPER(MD5(merchant_secret)))). Recorded once per order, status and payment id (SB-9). Status 2
+        activates the subscription and entitlement in one transaction after checking amount and currency; -1 and -2 mark
+        a pending payment cancelled or failed; -3 (charged back) revokes the entitlement.
       security: []
-      parameters:
-        - { name: provider, in: path, required: true, schema: { type: string, enum: [sandbox, stripe, payhere] } }
       requestBody:
         required: true
         content:
-          application/json:
-            schema: { type: object }
-      responses:
-        '200': { description: Accepted (including duplicates). }
-        '400': { description: Invalid signature or payload; nothing recorded. }
-  /api/admin/billing/policies:
-    get:
-      tags: [Admin billing]
-      operationId: getPolicies
-      summary: Free-access policies with a live preview
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [merchant_id, order_id, payhere_amount, payhere_currency, status_code, md5sig]
+              properties:
+                merchant_id: { type: string }
+                order_id: { type: string, format: uuid }
+                payment_id: { type: string }
+                payhere_amount: { type: string, example: '4500.00' }
+                payhere_currency: { type: string, enum: [LKR, USD] }
+                status_code: { type: string, enum: ['2', '0', '-1', '-2', '-3'] }
+                md5sig: { type: string }
+                status_message: { type: string }
+                method: { type: string }
       responses:
         '200':
-          description: Policies and the resulting free exam list.
+          description: Genuine message accepted, including repeats. The body names the outcome.
           content:
-            application/json:
-              schema:
-                type: object
-                required: [policies, freeExamIds]
-                properties:
-                  policies: { type: array, items: { $ref: '#/components/schemas/Policy' } }
-                  freeExamIds: { type: array, items: { type: string, format: uuid } }
-        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
-        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
-  /api/admin/billing/policies/{ruleCode}:
-    put:
-      tags: [Admin billing]
-      operationId: updatePolicy
-      summary: Change a free-access policy (audited)
+            text/plain:
+              schema: { type: string, enum: [ACTIVATED, PENDING, CANCELLED, FAILED, CHARGED_BACK, DUPLICATE, UNKNOWN_ORDER, AMOUNT_MISMATCH, IGNORED] }
+        '400': { description: Missing or wrong signature; nothing recorded. }
+  /api/payments/test/{transactionId}:
+    post:
+      tags: [Payments]
+      operationId: completeTestPayment
+      summary: Labelled TEST provider only — the student's choice stands in for the provider
+      description: 404 when real payments are configured, or for someone else's payment. No money moves.
       parameters:
-        - { name: ruleCode, in: path, required: true, schema: { type: string, enum: [FA1_CATALOGUE_POSITION, FA2_WELCOME_ALLOWANCE, FA4_FREE_FEATURES] } }
-        - { name: If-Match, in: header, required: true, description: Version for optimistic locking., schema: { type: string } }
+        - { name: transactionId, in: path, required: true, schema: { type: string, format: uuid } }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/Policy' }
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [SUCCEEDED, FAILED, CANCELLED] }
       responses:
-        '200': { description: Saved; applies from the next attempt (FA-6)., content: { application/json: { schema: { $ref: '#/components/schemas/Policy' } } } }
-        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '200':
+          description: Outcome applied (same outcomes as the PayHere notification).
+          content:
+            application/json:
+              schema: { type: object, required: [result], properties: { result: { type: string } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+  /api/admin/billing/free-attempts:
+    get:
+      tags: [Admin billing]
+      operationId: listFreeAttempts
+      summary: Published exams and the free attempts of each exam type
+      description: The numbers are set in each exam's setup (step 4, catalog-service) and reach this service through the catalogue feed.
+      responses:
+        '200':
+          description: Published exams in catalogue order.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/ExamFreeAttempts' } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
-        '409': { $ref: './common.yaml#/components/responses/Conflict' }
   /api/admin/billing/plans:
+    get:
+      tags: [Admin billing]
+      operationId: listAllPlans
+      summary: All plans, including those not on sale
+      responses:
+        '200': { description: Plans., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Plan' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
     post:
       tags: [Admin billing]
       operationId: createPlan
@@ -205,7 +327,283 @@ paths:
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/billing/plans/{planId}:
+    delete:
+      tags: [Admin billing]
+      operationId: deletePlan
+      summary: Delete a plan nobody has paid for (audited)
+      parameters:
+        - { name: planId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: 'Students have paid for it: hide it instead (CONFLICT).', content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+    put:
+      tags: [Admin billing]
+      operationId: updatePlan
+      summary: Change a plan (audited); payments already made keep their price
+      parameters:
+        - { name: planId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, description: The plan's version., schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanInput' }
+      responses:
+        '200': { description: Saved., content: { application/json: { schema: { $ref: '#/components/schemas/Plan' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: Someone else saved first (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/discount-codes:
+    get:
+      tags: [Admin billing]
+      operationId: listDiscountCodes
+      summary: Discount codes, newest first, with how often each was used
+      responses:
+        '200': { description: Codes., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/DiscountCode' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+    post:
+      tags: [Admin billing]
+      operationId: createDiscountCode
+      summary: Create a discount code (audited)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiscountCodeInput' }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/DiscountCode' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/billing/discount-codes/{codeId}:
+    put:
+      tags: [Admin billing]
+      operationId: updateDiscountCode
+      summary: Change a discount code (audited); the code itself can't change
+      parameters:
+        - { name: codeId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: If-Match, in: header, required: true, description: The code's version., schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DiscountCodeInput' }
+      responses:
+        '200': { description: Saved., content: { application/json: { schema: { $ref: '#/components/schemas/DiscountCode' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: Someone else saved first (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/campaigns:
+    get:
+      tags: [Admin billing]
+      operationId: listCampaigns
+      summary: Free access campaigns, newest first
+      responses:
+        '200': { description: Campaigns., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Campaign' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+    post:
+      tags: [Admin billing]
+      operationId: createCampaign
+      summary: Start a free access campaign (audited)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CampaignInput' }
+      responses:
+        '201': { description: Created., content: { application/json: { schema: { $ref: '#/components/schemas/Campaign' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/billing/campaigns/{campaignId}/students:
+    post:
+      tags: [Admin billing]
+      operationId: addCampaignStudents
+      summary: Add students to a campaign for chosen students (audited)
+      description: Each student gets the campaign's length from today. Students who already have it are skipped.
+      parameters:
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentIds]
+              properties:
+                studentIds: { type: array, minItems: 1, maxItems: 500, items: { type: string, format: uuid } }
+      responses:
+        '200': { description: The campaign., content: { application/json: { schema: { $ref: '#/components/schemas/Campaign' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: 'The campaign has ended, or is open to every student (CONFLICT).', content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/campaigns/{campaignId}/end:
+    post:
+      tags: [Admin billing]
+      operationId: endCampaign
+      summary: End a campaign now (audited); the access it gave stops
+      parameters:
+        - { name: campaignId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: The campaign., content: { application/json: { schema: { $ref: '#/components/schemas/Campaign' } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: Already ended (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/payments:
+    get:
+      tags: [Admin finance]
+      operationId: searchPayments
+      summary: Payments, newest first, with refunds (paged)
+      description: Days are calendar days in tz. The finance screens' CSV export pages through this.
+      parameters:
+        - { name: from, in: query, required: false, description: First day (inclusive)., schema: { type: string, format: date } }
+        - { name: to, in: query, required: false, description: Last day (inclusive)., schema: { type: string, format: date } }
+        - { name: tz, in: query, required: false, schema: { type: string, default: UTC, example: Asia/Colombo } }
+        - name: status
+          in: query
+          required: false
+          description: 'PAID (succeeded and something was paid), FREE (free with a code), REFUNDED (any refund went through), or a payment status.'
+          schema: { type: string, enum: [PAID, FREE, PENDING, FAILED, CANCELLED, REFUNDED] }
+        - { name: planId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: studentId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: currency, in: query, required: false, schema: { type: string, enum: [LKR, USD] } }
+        - { name: code, in: query, required: false, description: A discount code (case doesn't matter)., schema: { type: string, maxLength: 40 } }
+        - { name: q, in: query, required: false, description: A payment id or PayHere payment id., schema: { type: string, maxLength: 100 } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, required: false, schema: { type: integer, enum: [10, 25, 50, 100], default: 25 } }
+      responses:
+        '200':
+          description: One page of payments.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/FinancePayment' } }
+                  page: { $ref: '#/components/schemas/PageMeta' }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+  /api/admin/billing/payments/{transactionId}:
+    get:
+      tags: [Admin finance]
+      operationId: paymentDetail
+      summary: One payment with its refunds and what can still be refunded
+      parameters:
+        - { name: transactionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: The payment.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [payment, refunds, refundableMinor, apiRefunds]
+                properties:
+                  payment: { $ref: '#/components/schemas/FinancePayment' }
+                  refunds: { type: array, items: { $ref: '#/components/schemas/Refund' } }
+                  refundableMinor: { type: integer, description: 'Paid minus refunds pending or done; 0 when nothing can be refunded.' }
+                  apiRefunds: { type: boolean, description: "Whether a refund can go through PayHere's Refund API (an API key is set and the payment went through PayHere)." }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+  /api/admin/billing/payments/{transactionId}/refunds:
+    post:
+      tags: [Admin finance]
+      operationId: refundPayment
+      summary: Refund all or part of a successful payment (audited)
+      description: >-
+        With method PAYHERE_API (the default when it's set up) the refund is recorded PENDING, sent to PayHere, then
+        saved as SUCCEEDED or FAILED; a FAILED refund doesn't count against the payment. With MANUAL the administrator
+        refunded in PayHere's portal (or another way) and the refund is recorded SUCCEEDED. With stopAccess the plan the
+        payment bought stops when the refund succeeds.
+      parameters:
+        - { name: transactionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, stopAccess]
+              properties:
+                amountMinor: { type: [integer, 'null'], minimum: 1, description: 'null = everything not refunded yet.' }
+                reason: { type: string, minLength: 3, maxLength: 500, description: "Kept in the payment's history; students don't see it." }
+                stopAccess: { type: boolean }
+                method: { type: [string, 'null'], enum: [PAYHERE_API, MANUAL, null] }
+                reference: { type: [string, 'null'], maxLength: 100, description: "For MANUAL: PayHere's refund number or where the money went." }
+      responses:
+        '201': { description: "The refund (status SUCCEEDED, FAILED or, if PayHere didn't answer, PENDING).", content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: 'The payment didn''t succeed, was free, or is already refunded in full (CONFLICT).', content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/refunds/{refundId}/resolve:
+    post:
+      tags: [Admin finance]
+      operationId: resolveRefund
+      summary: Settle a refund PayHere never answered, after checking PayHere (audited)
+      parameters:
+        - { name: refundId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [SUCCEEDED, FAILED] }
+                reference: { type: [string, 'null'], maxLength: 100 }
+                note: { type: [string, 'null'], maxLength: 500 }
+      responses:
+        '200': { description: The refund., content: { application/json: { schema: { $ref: '#/components/schemas/Refund' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
+        '404': { $ref: './common.yaml#/components/responses/NotFound' }
+        '409': { description: Already settled (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
+  /api/admin/billing/finance/summary:
+    get:
+      tags: [Admin finance]
+      operationId: financeSummary
+      summary: Money, payments and subscribers between two days
+      description: Default range is the last 30 days (today included); at most 400 days. Refunds count on the day they were made.
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date } }
+        - { name: tz, in: query, required: false, schema: { type: string, default: UTC, example: Asia/Colombo } }
+      responses:
+        '200': { description: The summary., content: { application/json: { schema: { $ref: '#/components/schemas/FinanceSummary' } } } }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
   /api/admin/billing/entitlements:
+    get:
+      tags: [Admin billing]
+      operationId: listEntitlements
+      summary: Entitlements, newest first (up to 200)
+      parameters:
+        - { name: studentId, in: query, required: false, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Entitlements., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Entitlement' } } } } }
+        '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: './common.yaml#/components/responses/Forbidden' }
     post:
       tags: [Admin billing]
       operationId: grantEntitlement
@@ -222,7 +620,7 @@ paths:
                 endsAt: { type: string, format: date-time }
                 reason: { type: string, minLength: 3, maxLength: 500 }
       responses:
-        '201': { description: Granted. }
+        '201': { description: Granted from now until endsAt (at most 5 years)., content: { application/json: { schema: { $ref: '#/components/schemas/Entitlement' } } } }
         '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
@@ -244,6 +642,7 @@ paths:
                 reason: { type: string, minLength: 3, maxLength: 500 }
       responses:
         '204': { description: Revoked; takes effect on the next request. }
+        '409': { description: Already revoked (CONFLICT)., content: { application/problem+json: { schema: { $ref: './common.yaml#/components/schemas/Problem' } } } }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
         '403': { $ref: './common.yaml#/components/responses/Forbidden' }
         '404': { $ref: './common.yaml#/components/responses/NotFound' }
@@ -252,7 +651,10 @@ paths:
       tags: [Internal]
       operationId: decideAccess
       summary: Decide whether a student may start a mode on an exam (assessment-service)
-      description: Evaluated at request time with no caching beyond the request (FR-ACC-03). Counts the welcome allowance atomically when `consume` is true.
+      description: >-
+        Needs a service token with scope billing.access. Evaluated at request time with no caching beyond the request
+        (FR-ACC-03). With `consume` (and `attemptId`), an allowed free start is counted against the free attempts of
+        that exam type, once per attemptId; starts by one student are serialised so free attempts can't be overspent.
       requestBody:
         required: true
         content:
@@ -276,8 +678,13 @@ paths:
                 required: [allowed, bank, reason]
                 properties:
                   allowed: { type: boolean }
-                  bank: { type: string, enum: [TRIAL, MAIN] }
-                  reason: { type: string, examples: [FA1_POSITION_2_OF_6, ACTIVE_SUBSCRIPTION, SUBSCRIPTION_REQUIRED] }
+                  bank: { type: string, enum: [MAIN], description: Free attempts and Premium both use the Main bank. }
+                  reason:
+                    type: string
+                    enum: [ACTIVE_ENTITLEMENT, PLAN_ATTEMPT, FREE_ATTEMPT, PLAN_ATTEMPTS_USED, FREE_ATTEMPTS_USED, SUBSCRIPTION_REQUIRED, MODE_NOT_AVAILABLE, EXAM_UNAVAILABLE]
+                    description: 'Order of use: an unlimited plan (ACTIVE_ENTITLEMENT), the limited plan ending soonest (PLAN_ATTEMPT), then a free attempt.'
+                  attemptsLeft: { type: [integer, 'null'], description: 'Plan or free attempts of that kind left after this start; null for an unlimited plan or a retried start.' }
+        '400': { $ref: './common.yaml#/components/responses/BadRequest' }
         '401': { $ref: './common.yaml#/components/responses/Unauthorized' }
 components:
   securitySchemes:
@@ -286,31 +693,121 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Limits:
+      type: object
+      description: 'Attempts per exam type, per exam, for the length of a plan. null = unlimited, 0 = not included.'
+      properties:
+        practice: { type: [integer, 'null'], minimum: 0 }
+        mock: { type: [integer, 'null'], minimum: 0 }
+        adaptive: { type: [integer, 'null'], minimum: 0 }
+    PublicPlan:
+      type: object
+      required: [id, name, scopeType, exams, durationMonths, limits]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        categoryId: { type: [string, 'null'], format: uuid }
+        exams:
+          type: array
+          description: The published exams covered (empty for ALL, which covers every exam).
+          items:
+            type: object
+            required: [examId, title, slug]
+            properties:
+              examId: { type: string, format: uuid }
+              title: { type: string }
+              slug: { type: string }
+        durationMonths: { type: integer, enum: [1, 3, 6, 12] }
+        priceLkrMinor: { type: [integer, 'null'], description: 'LKR price in cents (300000 = LKR 3,000.00); null = not sold in LKR.' }
+        priceUsdMinor: { type: [integer, 'null'], description: 'USD price in cents; null = not sold in USD.' }
+        limits: { $ref: '#/components/schemas/Limits' }
+        salePriceLkrMinor: { type: [integer, 'null'], description: 'The LKR price while a sale is on now; null otherwise.' }
+        salePriceUsdMinor: { type: [integer, 'null'], description: 'The USD price while a sale is on now; null otherwise.' }
+        saleEndsAt: { type: [string, 'null'], format: date-time, description: When the sale price ends. }
     Plan:
       type: object
-      required: [id, code, name, durationMonths, priceMinor, currency, active]
+      required: [id, code, name, scopeType, examIds, durationMonths, limits, active, displayOrder, version]
       properties:
         id: { type: string, format: uuid }
         code: { type: string }
         name: { type: string }
         description: { type: string }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        categoryId: { type: [string, 'null'], format: uuid }
+        examIds: { type: array, items: { type: string, format: uuid } }
         durationMonths: { type: integer, enum: [1, 3, 6, 12] }
-        priceMinor: { type: integer, description: Price in the currency's smallest unit. }
-        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        priceLkrMinor: { type: [integer, 'null'] }
+        priceUsdMinor: { type: [integer, 'null'] }
+        limits: { $ref: '#/components/schemas/Limits' }
         active: { type: boolean }
         displayOrder: { type: integer }
+        version: { type: integer, description: Send as If-Match when saving. }
+        updatedAt: { type: string, format: date-time }
+        sale: { $ref: '#/components/schemas/Sale' }
+    Sale:
+      type: object
+      description: A lower price between two dates; all null when there is no sale.
+      properties:
+        priceLkrMinor: { type: [integer, 'null'] }
+        priceUsdMinor: { type: [integer, 'null'] }
+        startsAt: { type: [string, 'null'], format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time }
     PlanInput:
       type: object
-      required: [code, name, durationMonths, priceMinor, currency]
+      required: [name, scopeType, durationMonths]
+      description: At least one price, and at least one exam type included.
       properties:
-        code: { type: string, pattern: '^[a-z0-9-]{2,30}$' }
-        name: { type: string, maxLength: 60 }
-        description: { type: string, maxLength: 300 }
+        code: { type: string, pattern: '^[a-z0-9][a-z0-9-]{1,39}$', description: Required when creating; can't change. }
+        name: { type: string, minLength: 2, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL], description: 'EXAM: exactly one exam. BUNDLE: a fixed list of 2–100 exams. ALL: every exam.' }
+        categoryId: { type: [string, 'null'], format: uuid, description: 'Groups a plan on the Pricing page; ignored for ALL.' }
+        examIds: { type: array, items: { type: string, format: uuid } }
         durationMonths: { type: integer, enum: [1, 3, 6, 12] }
-        priceMinor: { type: integer, minimum: 1 }
-        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        priceLkrMinor: { type: [integer, 'null'], minimum: 100, maximum: 10000000000 }
+        priceUsdMinor: { type: [integer, 'null'], minimum: 100, maximum: 10000000000 }
+        practiceLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000, description: 'null = unlimited, 0 = not included.' }
+        mockLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+        adaptiveLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
         active: { type: boolean }
-        displayOrder: { type: integer }
+        displayOrder: { type: integer, minimum: 0, maximum: 1000 }
+        salePriceLkrMinor: { type: [integer, 'null'], minimum: 100, description: 'Lower than priceLkrMinor; needs saleStartsAt and saleEndsAt.' }
+        salePriceUsdMinor: { type: [integer, 'null'], minimum: 100, description: Lower than priceUsdMinor. }
+        saleStartsAt: { type: [string, 'null'], format: date-time }
+        saleEndsAt: { type: [string, 'null'], format: date-time }
+    ActivePlan:
+      type: object
+      required: [id, name, source, scopeType, limits, startsAt, endsAt, exams]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        source: { type: string, enum: [SUBSCRIPTION, MANUAL, CAMPAIGN] }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        limits: { $ref: '#/components/schemas/Limits' }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        exams:
+          type: array
+          description: 'The exams covered, with use per exam type (for ALL: only exams already used under this plan).'
+          items:
+            type: object
+            required: [examId, title, slug, modes]
+            properties:
+              examId: { type: string, format: uuid }
+              title: { type: string }
+              slug: { type: string }
+              modes:
+                type: array
+                items:
+                  type: object
+                  required: [mode, used]
+                  properties:
+                    mode: { type: string, enum: [PRACTICE, MOCK, USER_FRIENDLY] }
+                    limit: { type: [integer, 'null'], description: null = unlimited. }
+                    used: { type: integer }
+                    left: { type: [integer, 'null'] }
     SubscriptionPeriod:
       type: object
       required: [id, planName, status, startsAt, endsAt]
@@ -320,11 +817,283 @@ components:
         status: { type: string, enum: [ACTIVE, EXPIRED, CANCELLED] }
         startsAt: { type: string, format: date-time }
         endsAt: { type: string, format: date-time }
-    Policy:
+    Payment:
       type: object
-      required: [ruleCode, active, params]
+      required: [id, planName, durationMonths, amountMinor, currency, provider, status, createdAt]
       properties:
-        ruleCode: { type: string, enum: [FA1_CATALOGUE_POSITION, FA2_WELCOME_ALLOWANCE, FA4_FREE_FEATURES] }
+        id: { type: string, format: uuid }
+        planName: { type: string }
+        durationMonths: { type: integer }
+        amountMinor: { type: integer }
+        currency: { type: string }
+        provider: { type: string, enum: [PAYHERE, TEST, FREE] }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
+        failureReason: { type: [string, 'null'], enum: [CHARGEDBACK, NOT_COMPLETED, null] }
+        createdAt: { type: string, format: date-time }
+        premiumStartsAt: { type: [string, 'null'], format: date-time }
+        premiumEndsAt: { type: [string, 'null'], format: date-time }
+        discountMinor: { type: integer, description: Taken off by a discount code. }
+        paymentRef: { type: [string, 'null'], description: "PayHere's payment id." }
+        listPriceMinor: { type: [integer, 'null'], description: "The plan's regular price at checkout." }
+        refundedMinor: { type: integer, description: Refunds that went through. }
+        refunds:
+          type: array
+          description: Refunds that went through (no reasons or internal notes).
+          items:
+            type: object
+            required: [amountMinor, refundedAt]
+            properties:
+              amountMinor: { type: integer }
+              refundedAt: { type: string, format: date-time }
+    FinancePayment:
+      type: object
+      required: [id, studentId, planId, planName, durationMonths, provider, amountMinor, currency, status, discountMinor, refundedMinor, refundPendingMinor, refundState, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        studentId: { type: string, format: uuid }
+        planId: { type: string, format: uuid }
+        planName: { type: string }
+        durationMonths: { type: integer }
+        provider: { type: string, enum: [PAYHERE, TEST, FREE] }
+        providerRef: { type: [string, 'null'], description: "PayHere's payment id." }
+        amountMinor: { type: integer }
+        currency: { type: string, enum: [LKR, USD] }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED, CANCELLED] }
+        failureReason: { type: [string, 'null'] }
+        listPriceMinor: { type: [integer, 'null'], description: "The plan's regular price at checkout." }
+        discountMinor: { type: integer }
+        discountCode: { type: [string, 'null'] }
+        refundedMinor: { type: integer, description: Refunds that went through. }
+        refundPendingMinor: { type: integer, description: Refunds sent to PayHere and not answered yet. }
+        refundState: { type: string, enum: [NONE, PARTIAL, FULL] }
+        periodStatus: { type: [string, 'null'], enum: [ACTIVE, EXPIRED, CANCELLED, null], description: The plan period this payment bought. }
+        periodStartsAt: { type: [string, 'null'], format: date-time }
+        periodEndsAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Refund:
+      type: object
+      required: [id, transactionId, amountMinor, currency, reason, method, status, stopAccess, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        transactionId: { type: string, format: uuid }
+        amountMinor: { type: integer }
+        currency: { type: string, enum: [LKR, USD] }
+        reason: { type: string }
+        method: { type: string, enum: [PAYHERE_API, MANUAL] }
+        status: { type: string, enum: [PENDING, SUCCEEDED, FAILED] }
+        providerRef: { type: [string, 'null'], description: "PayHere's refund number, or the administrator's note." }
+        failureReason: { type: [string, 'null'] }
+        stopAccess: { type: boolean }
+        createdBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PageMeta:
+      type: object
+      required: [page, size, totalElements, totalPages]
+      properties:
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    FinanceSummary:
+      type: object
+      required: [from, to, tz, money, payments, byPlan, days, subscribers, endingSoon, apiRefunds]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        tz: { type: string }
+        money:
+          type: array
+          description: Per currency; amounts are never mixed.
+          items:
+            type: object
+            required: [currency, paidMinor, refundedMinor, netMinor, discountMinor, paidPayments, refunds]
+            properties:
+              currency: { type: string, enum: [LKR, USD] }
+              paidMinor: { type: integer }
+              refundedMinor: { type: integer }
+              netMinor: { type: integer, description: Paid minus refunded in the range. }
+              discountMinor: { type: integer, description: 'Given in discount codes, including free-with-code plans.' }
+              paidPayments: { type: integer }
+              refunds: { type: integer }
+        payments:
+          type: object
+          required: [paid, free, pending, failed, cancelled]
+          properties:
+            paid: { type: integer }
+            free: { type: integer }
+            pending: { type: integer }
+            failed: { type: integer }
+            cancelled: { type: integer }
+        byPlan:
+          type: array
+          items:
+            type: object
+            required: [planName, currency, payments, paidMinor]
+            properties:
+              planName: { type: string }
+              currency: { type: string, enum: [LKR, USD] }
+              payments: { type: integer }
+              paidMinor: { type: integer }
+        days:
+          type: array
+          description: Days with payments or refunds, in tz.
+          items:
+            type: object
+            required: [date, currency, paidMinor, refundedMinor, payments]
+            properties:
+              date: { type: string, format: date }
+              currency: { type: string, enum: [LKR, USD] }
+              paidMinor: { type: integer }
+              refundedMinor: { type: integer }
+              payments: { type: integer }
+        subscribers:
+          type: object
+          required: [activeNow, endingIn7Days, endingIn30Days, newBuyers, returningBuyers, freeAccessNow]
+          properties:
+            activeNow: { type: integer, description: Students with a paid plan active now. }
+            endingIn7Days: { type: integer, description: "Of those, whose last paid plan ends within 7 days." }
+            endingIn30Days: { type: integer }
+            newBuyers: { type: integer, description: Buyers in the range whose first paid payment ever is in the range. }
+            returningBuyers: { type: integer }
+            freeAccessNow: { type: integer, description: Students with campaign or given access now. }
+        endingSoon:
+          type: array
+          description: Students whose last paid plan ends within 30 days, soonest first (at most 50).
+          items:
+            type: object
+            required: [studentId, planName, endsAt]
+            properties:
+              studentId: { type: string, format: uuid }
+              planName: { type: string }
+              endsAt: { type: string, format: date-time }
+        apiRefunds: { type: boolean, description: "Whether PayHere's Refund API is set up." }
+    ExamFreeAttempts:
+      type: object
+      required: [examId, title, slug, modes, freeAttempts]
+      properties:
+        examId: { type: string, format: uuid }
+        title: { type: string }
+        slug: { type: string }
+        modes: { type: array, items: { $ref: './common.yaml#/components/schemas/Mode' } }
+        freeAttempts:
+          type: object
+          additionalProperties: { type: integer, minimum: 0 }
+          examples: [{ PRACTICE: 3, MOCK: 1, USER_FRIENDLY: 3 }]
+    Entitlement:
+      type: object
+      required: [id, studentId, source, state, startsAt, endsAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        studentId: { type: string, format: uuid }
+        source: { type: string, enum: [SUBSCRIPTION, MANUAL, CAMPAIGN] }
+        state: { type: string, enum: [ACTIVE, SCHEDULED, EXPIRED, REVOKED] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        grantReason: { type: [string, 'null'] }
+        grantedBy: { type: [string, 'null'], format: uuid }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        revokedReason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    Quote:
+      type: object
+      required: [currency, listPriceMinor, priceMinor, discountMinor, totalMinor]
+      properties:
+        currency: { type: string, enum: [LKR, USD] }
+        listPriceMinor: { type: integer, description: "The plan's regular price." }
+        priceMinor: { type: integer, description: The price before the code (the sale price while a sale is on). }
+        saleEndsAt: { type: [string, 'null'], format: date-time }
+        code: { type: [string, 'null'], description: The code as stored (capitals). }
+        codeId: { type: [string, 'null'], format: uuid }
+        discountMinor: { type: integer }
+        totalMinor: { type: integer, description: What the student pays; 0 = free with the code. }
+    DiscountCode:
+      type: object
+      required: [id, code, allPlans, planIds, startsAt, endsAt, maxUsesPerStudent, active, version, uses]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        description: { type: string }
+        percentOff: { type: [integer, 'null'] }
+        amountOffLkrMinor: { type: [integer, 'null'] }
+        amountOffUsdMinor: { type: [integer, 'null'] }
+        allPlans: { type: boolean }
+        planIds: { type: array, items: { type: string, format: uuid } }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        maxUses: { type: [integer, 'null'], description: null = no overall limit. }
+        maxUsesPerStudent: { type: integer }
         active: { type: boolean }
-        params: { type: object }
-        version: { type: integer }
+        version: { type: integer, description: Send as If-Match when saving. }
+        uses: { type: integer, description: Payments made with it that are pending or succeeded. }
+    DiscountCodeInput:
+      type: object
+      required: [endsAt]
+      description: 'Either percentOff, or an amount in LKR and/or USD.'
+      properties:
+        code: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{2,31}$', description: "Required when creating; stored in capitals; can't change." }
+        description: { type: string, maxLength: 200 }
+        percentOff: { type: [integer, 'null'], minimum: 1, maximum: 100 }
+        amountOffLkrMinor: { type: [integer, 'null'], minimum: 1 }
+        amountOffUsdMinor: { type: [integer, 'null'], minimum: 1 }
+        allPlans: { type: boolean }
+        planIds: { type: array, maxItems: 100, items: { type: string, format: uuid }, description: Required unless allPlans. }
+        startsAt: { type: [string, 'null'], format: date-time, description: Defaults to now. }
+        endsAt: { type: string, format: date-time }
+        maxUses: { type: [integer, 'null'], minimum: 1 }
+        maxUsesPerStudent: { type: [integer, 'null'], minimum: 1, maximum: 100, default: 1 }
+        active: { type: boolean }
+    Campaign:
+      type: object
+      required: [id, name, scopeType, examIds, limits, audience, startsAt, students]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        categoryId: { type: [string, 'null'], format: uuid }
+        examIds: { type: array, items: { type: string, format: uuid } }
+        limits: { $ref: '#/components/schemas/Limits' }
+        audience: { type: string, enum: [ALL, SELECTED] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: [string, 'null'], format: date-time, description: For ALL. }
+        durationMonths: { type: [integer, 'null'], description: 'For SELECTED: how long each student has it.' }
+        endedAt: { type: [string, 'null'], format: date-time, description: Set when an administrator ended it early. }
+        createdBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        students: { type: integer, description: 'Students who have it (for ALL, those who have used it).' }
+    CampaignInput:
+      type: object
+      required: [name, scopeType, audience]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 80 }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        categoryId: { type: [string, 'null'], format: uuid }
+        examIds: { type: array, items: { type: string, format: uuid } }
+        practiceLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000, description: 'null = unlimited, 0 = not included.' }
+        mockLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+        adaptiveLimit: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+        audience: { type: string, enum: [ALL, SELECTED], description: 'ALL: every student between startsAt and endsAt (at most 2 years). SELECTED: studentIds, for durationMonths from today.' }
+        startsAt: { type: [string, 'null'], format: date-time, description: 'ALL only; defaults to now.' }
+        endsAt: { type: [string, 'null'], format: date-time }
+        durationMonths: { type: [integer, 'null'], enum: [1, 3, 6, 12, null] }
+        studentIds: { type: array, maxItems: 500, items: { type: string, format: uuid } }
+    Offer:
+      type: object
+      required: [id, name, scopeType, exams, limits, endsAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        scopeType: { type: string, enum: [EXAM, BUNDLE, ALL] }
+        exams:
+          type: array
+          description: The published exams included (empty for ALL, which includes every exam).
+          items:
+            type: object
+            required: [examId, title, slug]
+            properties:
+              examId: { type: string, format: uuid }
+              title: { type: string }
+              slug: { type: string }
+        limits: { $ref: '#/components/schemas/Limits' }
+        endsAt: { type: string, format: date-time }

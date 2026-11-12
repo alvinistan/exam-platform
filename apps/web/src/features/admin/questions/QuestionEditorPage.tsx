@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CircleCheck, TriangleAlert } from 'lucide-react';
 import { Alert, Badge, Button, Card, Dialog, EmptyState, ErrorState, Skeleton } from '@/components/ui';
+import { useAdminExam } from '@/features/admin/catalog/api';
+import { safeReturnTo, withReturnTo } from '@/features/admin/setup/returnTo';
 import { ApiError } from '@/lib/api/problem';
 import { QuestionForm } from './QuestionForm';
 import { QuestionStatusBadge } from './QuestionStatusBadge';
@@ -26,6 +28,10 @@ export function QuestionEditorPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const question = useQuestion(questionId);
+  const returnTo = safeReturnTo(params.get('returnTo'));
+  const examId = params.get('examId') ?? undefined;
+  const exam = useAdminExam(examId);
+  const back = returnTo ? { to: returnTo, label: 'Back to exam setup' } : { to: '/admin/questions', label: 'All questions' };
   const [raised, setRaised] = useState<{ key: string; text: string } | null>(null);
   const notice = raised?.key === location.key ? raised.text : ((location.state as { notice?: string } | null)?.notice ?? null);
   const setNotice = (text: string) => setRaised({ key: location.key, text });
@@ -54,8 +60,8 @@ export function QuestionEditorPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <Link to="/admin/questions" className="inline-flex items-center gap-1.5 text-[14.5px] font-semibold">
-          <ArrowLeft aria-hidden="true" className="size-4" /> All questions
+        <Link to={back.to} className="inline-flex items-center gap-1.5 text-[14.5px] font-semibold">
+          <ArrowLeft aria-hidden="true" className="size-4" /> {back.label}
         </Link>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-extrabold tracking-tight">{data ? 'Question' : 'New question'}</h1>
@@ -74,12 +80,14 @@ export function QuestionEditorPage() {
         key={data ? `${data.id}-${data.version}` : 'new'}
         question={data}
         initialTopicId={params.get('topicId') ?? ''}
+        limitToSubjectIds={exam.data?.subjectIds}
         onSaved={(saved, created) => {
           if (created) {
-            void navigate(`/admin/questions/${saved.id}`, { replace: true, state: { notice: 'Draft saved.' } });
+            const path = returnTo ? withReturnTo(`/admin/questions/${saved.id}`, returnTo) : `/admin/questions/${saved.id}`;
+            void navigate(path, { replace: true, state: { notice: 'Draft saved. Mark it ready when it’s complete.' } });
           } else {
             setNotice(saved.status === 'PUBLISHED' && saved.hasDraftChanges
-              ? 'Saved as a new version. Students keep seeing the published version until you publish the changes.'
+              ? 'Saved as a new version. Students keep seeing the ready version until you make the changes live.'
               : 'Saved.');
           }
         }}
@@ -94,17 +102,21 @@ type Action = { to: QuestionStatus | 'DISCARD'; label: string; confirm?: string;
 function actionsFor(q: QuestionDetail): Action[] {
   switch (q.status) {
     case 'DRAFT':
-      return [{ to: 'REVIEWED', label: 'Mark as reviewed' }, { to: 'ARCHIVED', label: 'Archive', variant: 'secondary', confirm: 'archive' }];
+      return [
+        { to: 'PUBLISHED', label: 'Mark as ready', confirm: 'publish' },
+        { to: 'REVIEWED', label: 'Mark as reviewed', variant: 'secondary' },
+        { to: 'ARCHIVED', label: 'Archive', variant: 'secondary', confirm: 'archive' },
+      ];
     case 'REVIEWED':
       return [
-        { to: 'PUBLISHED', label: 'Publish', confirm: 'publish' },
+        { to: 'PUBLISHED', label: 'Mark as ready', confirm: 'publish' },
         { to: 'DRAFT', label: 'Back to draft', variant: 'secondary' },
         { to: 'ARCHIVED', label: 'Archive', variant: 'secondary', confirm: 'archive' },
       ];
     case 'PUBLISHED':
       return q.hasDraftChanges
         ? [
-            { to: 'PUBLISHED', label: 'Publish changes', confirm: 'publish' },
+            { to: 'PUBLISHED', label: 'Make changes live', confirm: 'publish' },
             { to: 'DISCARD', label: 'Discard changes', variant: 'secondary', confirm: 'discard' },
             { to: 'ARCHIVED', label: 'Archive', variant: 'secondary', confirm: 'archive' },
           ]
@@ -116,9 +128,9 @@ function actionsFor(q: QuestionDetail): Action[] {
 
 const confirmText: Record<string, { title: string; body: string; button: string; variant: 'primary' | 'danger' }> = {
   publish: {
-    title: 'Publish this question?',
-    body: 'This version is frozen and students can be given it. Later edits start a new version.',
-    button: 'Publish',
+    title: 'Mark this question as ready?',
+    body: 'Students can be given this version. Later edits start a new version, and students keep this one until you make the changes live.',
+    button: 'Mark as ready',
     variant: 'primary',
   },
   archive: {
@@ -148,7 +160,7 @@ function WorkflowPanel({ question, onDone }: { question: QuestionDetail; onDone:
         a.to === 'DISCARD'
           ? 'Changes discarded.'
           : a.to === 'PUBLISHED'
-            ? `Version ${saved.publishedVersionNo ?? saved.versionNo} is published.`
+            ? `Version ${saved.publishedVersionNo ?? saved.versionNo} is ready for students.`
             : `Moved to ${a.to.toLowerCase()}.`,
       );
     },
@@ -166,12 +178,12 @@ function WorkflowPanel({ question, onDone }: { question: QuestionDetail; onDone:
     <Card className="flex flex-col gap-4 p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-bold">Review and publishing</h2>
+          <h2 className="text-lg font-bold">Status</h2>
           <p className="text-[14.5px] text-muted">
             Editing version {question.versionNo}
             {question.publishedVersionNo !== null &&
               (question.hasDraftChanges
-                ? ` · students see version ${question.publishedVersionNo} until you publish these changes`
+                ? ` · students see version ${question.publishedVersionNo} until you make these changes live`
                 : ' · this version is live')}
           </p>
         </div>
@@ -192,12 +204,12 @@ function WorkflowPanel({ question, onDone }: { question: QuestionDetail; onDone:
       {question.status !== 'ARCHIVED' &&
         (valid ? (
           <p className="inline-flex items-center gap-2 text-success-ink">
-            <CircleCheck aria-hidden="true" className="size-5" /> Complete: ready for review and publishing.
+            <CircleCheck aria-hidden="true" className="size-5" /> Complete: it can be marked ready.
           </p>
         ) : (
           <div className="flex flex-col gap-2 rounded-md border border-[#f2d8a6] bg-warning-soft px-4 py-3 text-warning-ink">
             <p className="inline-flex items-center gap-2 font-semibold">
-              <TriangleAlert aria-hidden="true" className="size-5" /> Before it can be reviewed
+              <TriangleAlert aria-hidden="true" className="size-5" /> Before it can be marked ready
             </p>
             <ul className="list-disc pl-11 text-[14.5px]">
               {problems.map((p) => (
