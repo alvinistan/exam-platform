@@ -29,7 +29,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Spring Cloud 2025.1.x (Oakwood) supports Spring Boot 4.1.x from 2025.1.2 onwards. -->
         <spring-cloud.version>2025.1.4</spring-cloud.version>
-        <springdoc.version>3.0.3</springdoc.version>
+        <springdoc.version>3.2.0</springdoc.version>
         <!-- Security overrides of versions Spring Boot manages go here, each with its CVE numbers. CI
              (check_pins.py) fails once a Spring Boot release manages a newer version, so remove the pin then.
              Spring Boot 4.1.2 covers the Phase 4 pins (Tomcat 11.0.27, Jackson 3.1.7 / 2.21.7). -->
