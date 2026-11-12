@@ -20,6 +20,8 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
+    // The app honours reduced motion, so colours never sit mid-transition when axe measures contrast.
+    contextOptions: { reducedMotion: 'reduce' },
   },
   projects: [
     { name: 'setup', testMatch: /00-.*\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },

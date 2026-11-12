@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { ADMIN_EMAIL, SAMPLE_TITLE, signIn } from './support';
+import { ADMIN_EMAIL, SAMPLE_TITLE, sampleExam, signIn } from './support';
 
 /**
  * Setup project: the admin creates the sample exam and publishes it through the admin screens. The other journeys
@@ -28,4 +28,11 @@ test('admin creates the sample exam and publishes it; its public page appears', 
   await expect(page.getByRole('heading', { name: 'Practice' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Mock exam' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign in to start' }).first()).toBeVisible();
+
+  // subscription-service learns about the publication from the catalogue's event feed (polled every 2 s); until
+  // then it treats the exam as unavailable. Wait for that, so the journeys don't race it.
+  const exam = await sampleExam(page);
+  await expect
+    .poll(async () => (await page.request.get(`/api/access/exams?examIds=${exam.id}`)).text(), { timeout: 30_000 })
+    .toContain('PRACTICE');
 });
