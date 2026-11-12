@@ -4,10 +4,11 @@
 #   docker build -f infra/docker/service.Dockerfile --build-arg MODULE=services/catalog-service -t catalog-service .
 
 FROM maven:3.9.11-eclipse-temurin-21 AS build
+# The Maven cache is shared by all images; "locked" stops parallel builds (docker compose build) corrupting it.
 ARG MODULE
 WORKDIR /src
 COPY backend/ ./
-RUN --mount=type=cache,target=/root/.m2 \
+RUN --mount=type=cache,target=/root/.m2,sharing=locked \
     test -n "$MODULE" && mvn -B -ntp -q -pl "$MODULE" -am -DskipTests package \
     && cp "$MODULE/target/$(basename "$MODULE").jar" /app.jar
 
