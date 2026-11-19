@@ -1,10 +1,11 @@
-# Continuous integration: every push to main and every pull request.
-# Third-party actions are pinned to full commit SHAs (tag in the comment) so a moved tag can't change what runs.
+
+# Continuous integration: every push to main and deploy, and every pull request.
+# Docker images are published to Docker Hub only from the deploy branch.
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, deploy]
   pull_request:
   workflow_dispatch:
 
@@ -30,11 +31,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      # Security pins in backend/pom.xml must never end up older than Spring Boot's own versions.
       - name: Check version pins aren't downgrades
         working-directory: .
         run: python3 .github/scripts/check_pins.py
-      # Unit tests plus Testcontainers integration tests (real PostgreSQL 16 per service).
       - name: Build and test
         run: |
           set -o pipefail
@@ -118,7 +117,6 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Fails on known CRITICAL vulnerabilities with a fix available, and on any committed secret.
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -127,7 +125,6 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: '1'
-      # Full HIGH+CRITICAL listing for review (does not fail the build).
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
@@ -136,8 +133,6 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: '0'
 
-  # Phase 14: the whole stack in Docker (production web server headers included) with a fake Google sign-in,
-  # driven by Playwright (journeys and axe accessibility checks), then a k6 load test of mock exams.
   e2e:
     name: End-to-end, accessibility and load tests
     runs-on: ubuntu-24.04
@@ -178,7 +173,6 @@ jobs:
             [ -f "$f" ] || continue
             echo "::group::$f"; head -c 12000 "$f"; echo; echo "::endgroup::"
           done
-      # Grafana's official k6 image, on the host network so it reaches the stack at localhost.
       - name: Load test (mock exams)
         if: ${{ !cancelled() }}
         run: |
@@ -233,7 +227,7 @@ jobs:
           push: false
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
-      # Image publishing to Amazon ECR is added with the deployment phase, after AWS access is approved.
+
       - name: Scan image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -242,11 +236,38 @@ jobs:
           format: json
           output: trivy-${{ matrix.image }}.json
           exit-code: '0'
-      # Fails only on CRITICAL findings that have a fix; every HIGH/CRITICAL finding is listed on the pull request.
+
       - name: Check scan results
         run: python3 .github/scripts/trivy_report.py trivy-${{ matrix.image }}.json ${{ matrix.image }}
+
       - name: Check the container runs as a non-root user
         run: |
           user=$(docker image inspect --format '{{.Config.User}}' leenex/${{ matrix.image }}:ci)
           echo "Configured user: $user"
           case "$user" in ""|root|0|0:*) echo "Image runs as root"; exit 1;; esac
+
+      # Publish only after the image checks pass, and only on pushes to deploy.
+      - name: Log in to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/deploy'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          echo "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+
+      - name: Publish image to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/deploy'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          IMAGE_NAME: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          TARGET="$DOCKERHUB_USERNAME/leenex-platform"
+          docker tag "leenex/$IMAGE_NAME:ci" "$TARGET:$IMAGE_NAME-$GITHUB_SHA"
+          docker tag "leenex/$IMAGE_NAME:ci" "$TARGET:$IMAGE_NAME-latest"
+          docker push "$TARGET:$IMAGE_NAME-$GITHUB_SHA"
+          docker push "$TARGET:$IMAGE_NAME-latest"
+
+      - name: Log out from Docker Hub
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/deploy'
+        run: docker logout
