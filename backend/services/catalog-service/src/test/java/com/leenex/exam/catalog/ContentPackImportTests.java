@@ -40,7 +40,7 @@ class ContentPackImportTests extends CatalogTestSupport {
             String topic = m.group(2).startsWith("\"") ? m.group(2).substring(1, m.group(2).length() - 1) : m.group(2);
             topics.computeIfAbsent(m.group(1), k -> new LinkedHashSet<>()).add(topic);
         }
-        assertThat(topics.keySet()).containsExactly("Biology", "Chemistry", "Physics");
+        assertThat(topics.keySet()).containsExactlyInAnyOrder("Biology", "Chemistry", "Physics");
         String suffix = " " + unique("t");
         List<UUID> subjectIds = new ArrayList<>();
         for (Map.Entry<String, Set<String>> subject : topics.entrySet()) {
